@@ -47,14 +47,12 @@ jobs:
         run: npx electron-builder --win --config
         shell: bash
 
-      - name: Package Linux (deb + rpm + tar.gz)
+      - name: Package Linux (deb + tar.gz)
         if: matrix.os == 'ubuntu-latest'
         run: |
           APP_DIR="dist/OpenTimeSync-linux-x64"
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"
-          
-          # Create .deb package
           mkdir -p pkgdeb/DEBIAN pkgdeb/usr/lib/opentimesync pkgdeb/usr/share/applications pkgdeb/usr/bin
           cp -r "$APP_DIR"/* pkgdeb/usr/lib/opentimesync/
           cat > pkgdeb/DEBIAN/control << EOF
@@ -64,13 +62,11 @@ Section: utils
 Priority: optional
 Architecture: amd64
 Maintainer: OpenTimeSync Contributors
-Description: High-precision time synchronization desktop app via NTP-weighted clock
- Built with Electron. Supports Windows, macOS, Linux.
+Description: High-precision time synchronization desktop app via NTP
 EOF
           cat > pkgdeb/usr/share/applications/opentimesync.desktop << EOF
 [Desktop Entry]
 Name=OpenTimeSync
-Comment=High-precision NTP time sync
 Exec=/usr/lib/opentimesync/OpenTimeSync
 Type=Application
 Categories=Utility;
@@ -78,45 +74,6 @@ Terminal=false
 EOF
           ln -s /usr/lib/opentimesync/OpenTimeSync pkgdeb/usr/bin/opentimesync
           dpkg-deb --build pkgdeb "dist/opentimesync_${VERSION}_amd64.deb"
-
-          # Create .rpm package
-          mkdir -p pkgrpm/BUILD pkgrpm/RPMS
-          cat > pkgrpm/opentimesync.spec << EOF
-Name: opentimesync
-Version: $VERSION
-Release: 1
-Summary: High-precision NTP time sync desktop app
-License: MIT
-URL: https://github.com/Qiguiqiang/timeSyncWord
-BuildArch: x86_64
-
-%description
-High-precision time synchronization desktop app via NTP-weighted clock.
-
-%install
-mkdir -p %{buildroot}/usr/lib/opentimesync
-cp -r $APP_DIR/* %{buildroot}/usr/lib/opentimesync/
-mkdir -p %{buildroot}/usr/share/applications
-cat > %{buildroot}/usr/share/applications/opentimesync.desktop << DESKTOP_EOF
-[Desktop Entry]
-Name=OpenTimeSync
-Exec=/usr/lib/opentimesync/OpenTimeSync
-Type=Application
-Categories=Utility;
-Terminal=false
-DESKTOP_EOF
-mkdir -p %{buildroot}/usr/bin
-ln -s /usr/lib/opentimesync/OpenTimeSync %{buildroot}/usr/bin/opentimesync
-
-%files
-/usr/lib/opentimesync/
-/usr/share/applications/opentimesync.desktop
-/usr/bin/opentimesync
-EOF
-          rpmbuild -bb pkgrpm/opentimesync.spec --define "_topdir $(pwd)/pkgrpm" 2>/dev/null || true
-          find pkgrpm/RPMS -name "*.rpm" -exec cp {} dist/ \;
-          
-          # Keep tar.gz as fallback
           cd dist && tar -czf OpenTimeSync-linux-x64.tar.gz OpenTimeSync-linux-x64/ && cd ..
         shell: bash
 
@@ -145,7 +102,6 @@ EOF
             --title "OpenTimeSync ${{ github.ref_name }}" \
             --generate-notes \
             opentimesync-ubuntu-latest/*.deb \
-            opentimesync-ubuntu-latest/*.rpm \
             opentimesync-ubuntu-latest/*.tar.gz \
             opentimesync-windows-latest/*.exe \
             opentimesync-windows-latest/*.zip \
@@ -154,7 +110,6 @@ EOF
             --repo ${{ github.repository }} || \
           gh release upload "${{ github.ref_name }}" \
             opentimesync-ubuntu-latest/*.deb \
-            opentimesync-ubuntu-latest/*.rpm \
             opentimesync-ubuntu-latest/*.tar.gz \
             opentimesync-windows-latest/*.exe \
             opentimesync-windows-latest/*.zip \
