@@ -42,12 +42,7 @@ jobs:
           fi
         shell: bash
 
-      - name: Build and package Windows (exe installer + portable + zip)
-        if: matrix.os == 'windows-latest'
-        run: npx electron-builder --win --config
-        shell: bash
-
-      - name: Build and package Windows (exe + zip)
+      - name: Build and package Windows (installer + portable + zip)
         if: matrix.os == 'windows-latest'
         run: npx electron-builder --win --config
         shell: bash
