@@ -1,84 +1,100 @@
 # TimeSyncWord
 
-简约的浏览器端高精度时间同步工具。通过 NTP 多服务器加权同步，在浏览器中显示校准后的精确时间。
+Browser-based high-precision time synchronization tool via NTP-weighted clock.
 
-## 界面
+## Features
+
+- **NTP Multi-Server Sync** - Queries 5 NTP servers with weighted averaging and outlier filtering
+- **Server Broadcast Mode** - Server pushes time to all clients every 2 seconds (low load)
+- **Periodic RTT Measurement** - Network latency measured every 30 seconds
+- **Precision Grading** - S+/S/S-/A/B/C/D grades based on offset stability
+- **Timezone Support** - 14 timezones with localStorage persistence
+- **Cyberpunk UI** - Dark theme with neon glow effects, responsive design
+- **Docker Ready** - Multi-stage Docker build with docker-compose
+
+## Architecture
 
 ```
-┌─────────────────────────────────────────┐
-│           TimeSyncWord                   │
-│               ● SYNCED ±0.5ms            │
-│                                         │
-│            12:34:56.789                  │
-│   UTC: 2026-06-04 12:34:56.789          │
-│   OFFSET: +0.52ms  |  RTT: 12ms         │
-│                                         │
-│  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐   │
-│  │  精度  │ │  偏移  │ │  延迟  │ │  采样  │   │
-│  │  S+   │ │ -0.52│ │  12  │ │  18   │   │
-│  │  tier │ │  ms  │ │  ms  │ │samples│   │
-│  └──────┘ └──────┘ └──────┘ └──────┘   │
-└─────────────────────────────────────────┘
+NTP Servers (UDP) → Server (Node.js) → WebSocket Broadcast → Client (Browser)
+                                                        ↓
+                                              Client RTT Ping (every 30s)
 ```
 
-- Cyberpunk/HUD 暗色主题，Orbitron 字体大数字显示
-- 实时显示当前时间（HH:MM:SS.ms）、UTC、偏移量和 RTT
-- 底部四张指标卡：精度评级（S+/S/A/B/C）、偏移、延迟、采样数
-- 彩色状态指示：绿色（稳定）、黄（波动）、红（偏差过大）
+- **Server**: Queries NTP servers, calculates accurate UTC time, broadcasts to clients
+- **Client**: Receives server time, calculates offset, displays synchronized time
+- **Hybrid Mode**: Broadcast for time sync + periodic ping for RTT measurement
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 安装依赖
+# Install dependencies
 npm install
 
-# 启动
+# Start server
 npm start
 
-# 浏览器打开
+# Open browser
 # http://localhost:13013
 ```
 
-## 项目结构
+## Project Structure
 
 ```
 TimeSyncWord/
 ├── server/
-│   ├── index.js           # 服务器入口（HTTP + WebSocket）
-│   ├── config.js          # 端口、NTP 服务器、同步参数
-│   ├── time-service.js    # NTP 多服务器加权同步
-│   └── signaling.js       # WebSocket 时间查询处理
+│   ├── index.js           # Server entry (HTTP + WebSocket)
+│   ├── config.js          # NTP servers, sync parameters
+│   ├── time-service.js    # NTP multi-server weighted sync
+│   └── signaling.js       # WebSocket broadcast + RTT handler
 ├── public/
-│   ├── index.html         # 主页面
-│   ├── css/style.css      # 暗色 Cyberpunk 主题
-│   └── js/app.js          # 客户端同步 + 显示逻辑
-├── Dockerfile             # Docker 构建
-├── docker-compose.yml     # Docker 编排
+│   ├── index.html         # Main page
+│   ├── css/style.css      # Cyberpunk dark theme
+│   └── js/app.js          # Client sync + timezone + UI
+├── Dockerfile             # Multi-stage Docker build
+├── docker-compose.yml     # Docker orchestration
 └── README.md
 ```
 
-## 同步原理
+## Precision Grades
 
-1. 服务端每 5s 向多个 NTP 服务器（ntp.aliyun.com、ntp.tencent.com 等）发起查询
-2. 每个服务器多次采样，按 RTT 排序剔除最高 10% 的异常值
-3. 对剩余样本按 RTT 权重加权平均，计算系统时钟偏移
-4. 客户端每 500ms 向服务端发起 WebSocket 时间查询
-5. 客户端收到服务端时间戳后，同样按 RTT 过滤 + 加权平均计算出本地偏移
-6. 本地时间 = Date.now() + offset，实时更新显示器
+| Grade | Offset Std Dev | Description |
+|-------|---------------|-------------|
+| S+ | < 2ms | Extremely stable |
+| S | < 5ms | Very stable |
+| S- | < 10ms | Stable |
+| A | < 30ms | Good |
+| B | < 50ms | Fair |
+| C | < 100ms | Poor |
+| D | >= 100ms | Unstable |
 
-## Docker 部署
+## Docker Deployment
 
 ```bash
+# Build and run
 docker-compose up -d
+
+# View logs
+docker logs -f timesyncword
+
+# Stop
+docker-compose down
 ```
 
-## 配置
+## Configuration
 
-编辑 `server/config.js`：
-- `port`：HTTP 端口（默认 13013）
-- `ntpServers`：NTP 服务器列表
-- `sync.samplesPerServer`：每服务器采样数
-- `sync.resyncInterval`：重新同步间隔（ms）
+Edit `server/config.js`:
+- `port`: HTTP port (default 13013)
+- `ntpServers`: NTP server list
+- `sync.samplesPerServer`: Samples per NTP server
+- `sync.resyncInterval`: NTP resync interval (ms)
+
+## Time Synchronization Flow
+
+1. **Server → NTP**: Server queries 5 NTP servers (10 samples each)
+2. **Server → Client**: Server broadcasts time every 2 seconds via WebSocket
+3. **Client Calculation**: Client calculates offset = serverTime - localTime
+4. **Client → Server**: Client pings server every 30 seconds for RTT measurement
+5. **Display**: Client shows synchronized time with precision grade
 
 ## License
 

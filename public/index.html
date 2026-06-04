@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <title>TimeSyncWord</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -23,35 +23,50 @@
 
     <div class="time-panel">
       <div class="time-display">
-        <span class="time-main" id="currentTime">--:--:--</span>
+        <span class="time-digit" id="timeHours">--</span>
+        <span class="time-colon">:</span>
+        <span class="time-digit" id="timeMins">--</span>
+        <span class="time-colon">:</span>
+        <span class="time-digit" id="timeSecs">--</span>
         <span class="time-ms" id="currentMs">.---</span>
       </div>
       <div class="time-meta">
-        <span class="meta-item" id="utcDisplay">UTC: --</span>
+        <span class="meta-item" id="utcDisplay" data-tooltip="协调世界时（UTC），国际标准时间参考">UTC: --</span>
         <span class="meta-divider">|</span>
-        <span class="meta-item" id="offsetDisplay">OFFSET: --</span>
+        <div class="tz-selector" id="tzSelector">
+          <span class="meta-item tz-label" id="tzDisplay" data-tooltip="点击切换时区">UTC+8 Shanghai</span>
+          <div class="tz-panel" id="tzPanel"></div>
+        </div>
         <span class="meta-divider">|</span>
-        <span class="meta-item" id="rttDisplay">RTT: --</span>
+        <span class="meta-item" id="offsetDisplay" data-tooltip="服务器时间与客户端时间的差值（含网络延迟）">DIFF: --</span>
+        <span class="meta-divider">|</span>
+        <span class="meta-item" id="rttDisplay" data-tooltip="服务器与客户端之间的网络往返时间（每30秒测量一次）">PING: --</span>
+      </div>
+      <div class="time-info">
+        <span class="info-item" id="ntpCount" data-tooltip="服务端查询的NTP时间源服务器数量，用于校准服务器时钟">NTP: 5 servers</span>
       </div>
     </div>
 
     <div class="stats">
-      <div class="stat-card">
+      <div class="stat-card" data-tooltip="基于时间差稳定性和网络波动计算的同步质量评级">
         <div class="stat-label">精度</div>
-        <div class="stat-value" id="precisionDisplay">--</div>
+        <div class="stat-value">
+          <span id="precisionTier">--</span>
+          <span class="stat-prec-error" id="precisionError">--</span>
+        </div>
         <div class="stat-unit">tier</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">偏移</div>
+      <div class="stat-card" data-tooltip="服务器时间与客户端时间的差值（ms）。负数=客户端慢，正数=客户端快。含网络单向延迟">
+        <div class="stat-label">时间差</div>
         <div class="stat-value" id="offsetValue">--</div>
         <div class="stat-unit">ms</div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">延迟</div>
+      <div class="stat-card" data-tooltip="服务器与客户端之间的网络往返时间（RTT），每30秒测量一次。延迟越小，同步越准确">
+        <div class="stat-label">网络延迟</div>
         <div class="stat-value" id="rttValue">--</div>
         <div class="stat-unit">ms</div>
       </div>
-      <div class="stat-card">
+      <div class="stat-card" data-tooltip="最近20次同步测量的样本缓冲区。样本越多，抗网络波动能力越强">
         <div class="stat-label">采样</div>
         <div class="stat-value" id="sampleCount">0</div>
         <div class="stat-unit">samples</div>

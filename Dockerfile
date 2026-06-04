@@ -29,7 +29,7 @@ EXPOSE 13014
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:13013/api/status || exit 1
+  CMD wget -qO- http://localhost:13013/ || exit 1
 
 # Start
 CMD ["node", "server/index.js"]
