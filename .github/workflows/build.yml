@@ -34,7 +34,7 @@ jobs:
       - name: Build app
         run: |
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            npx @electron/packager . OpenTimeSync --platform=win32 --arch=x64 --out=dist --overwrite --icon=build/icon
+            echo "Windows build handled by electron-builder in next step"
           elif [ "${{ matrix.os }}" = "macos-latest" ]; then
             npx @electron/packager . OpenTimeSync --platform=darwin --arch=x64 --out=dist --overwrite --icon=build/icon
           else
@@ -42,9 +42,14 @@ jobs:
           fi
         shell: bash
 
-      - name: Package Windows (zip)
+      - name: Build and package Windows (exe installer + portable + zip)
         if: matrix.os == 'windows-latest'
-        run: cd dist && powershell -Command "Compress-Archive -Path OpenTimeSync-win32-x64 -DestinationPath OpenTimeSync-win32-x64.zip"
+        run: npx electron-builder --win --config
+        shell: bash
+
+      - name: Build and package Windows (exe + zip)
+        if: matrix.os == 'windows-latest'
+        run: npx electron-builder --win --config
         shell: bash
 
       - name: Package Linux (deb + rpm + tar.gz)
@@ -147,14 +152,18 @@ EOF
             opentimesync-ubuntu-latest/*.deb \
             opentimesync-ubuntu-latest/*.rpm \
             opentimesync-ubuntu-latest/*.tar.gz \
+            opentimesync-windows-latest/*.exe \
             opentimesync-windows-latest/*.zip \
+            opentimesync-windows-latest/*.blockmap \
             opentimesync-macos-latest/*.dmg \
             --repo ${{ github.repository }} || \
           gh release upload "${{ github.ref_name }}" \
             opentimesync-ubuntu-latest/*.deb \
             opentimesync-ubuntu-latest/*.rpm \
             opentimesync-ubuntu-latest/*.tar.gz \
+            opentimesync-windows-latest/*.exe \
             opentimesync-windows-latest/*.zip \
+            opentimesync-windows-latest/*.blockmap \
             opentimesync-macos-latest/*.dmg \
             --repo ${{ github.repository }} --clobber
         env:
