@@ -31,19 +31,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build for Windows
+      - name: Build app
+        run: |
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            npx @electron/packager . OpenTimeSync --platform=win32 --arch=x64 --out=dist --overwrite --icon=build/icon
+          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
+            npx @electron/packager . OpenTimeSync --platform=darwin --arch=x64 --out=dist --overwrite --icon=build/icon
+          else
+            npx @electron/packager . OpenTimeSync --platform=linux --arch=x64 --out=dist --overwrite --icon=build/icon
+          fi
+        shell: bash
+
+      - name: Package Windows (zip)
         if: matrix.os == 'windows-latest'
-        run: npx @electron/packager . OpenTimeSync --platform=win32 --arch=x64 --out=dist --overwrite --icon=build/icon
+        run: cd dist && powershell -Command "Compress-Archive -Path OpenTimeSync-win32-x64 -DestinationPath OpenTimeSync-win32-x64.zip"
+        shell: bash
 
-      - name: Build for Linux
+      - name: Package Linux (tar.gz)
         if: matrix.os == 'ubuntu-latest'
-        run: npx @electron/packager . OpenTimeSync --platform=linux --arch=x64 --out=dist --overwrite --icon=build/icon
+        run: cd dist && tar -czf OpenTimeSync-linux-x64.tar.gz OpenTimeSync-linux-x64/
+        shell: bash
 
-      - name: Build for macOS
+      - name: Package macOS (dmg)
         if: matrix.os == 'macos-latest'
-        run: npx @electron/packager . OpenTimeSync --platform=darwin --arch=x64 --out=dist --overwrite --icon=build/icon
+        run: hdiutil create -volname "OpenTimeSync" -srcfolder "dist/OpenTimeSync-darwin-x64/OpenTimeSync.app" -ov -format UDZO "dist/OpenTimeSync-macos.dmg"
+        shell: bash
 
-      - name: Upload artifacts
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: opentimesync-${{ matrix.os }}
@@ -57,22 +71,19 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
 
-      - name: Zip and Release
+      - name: Create Release
         run: |
-          cd opentimesync-ubuntu-latest && tar -czf ../OpenTimeSync-linux-x64.tar.gz OpenTimeSync-linux-x64/ && cd ..
-          cd opentimesync-windows-latest && zip -r ../OpenTimeSync-win32-x64.zip OpenTimeSync-win32-x64/ && cd ..
-          cd opentimesync-macos-latest && tar -czf ../OpenTimeSync-darwin-x64.tar.gz OpenTimeSync-darwin-x64/ && cd ..
           gh release create "${{ github.ref_name }}" \
             --title "OpenTimeSync ${{ github.ref_name }}" \
             --generate-notes \
-            OpenTimeSync-linux-x64.tar.gz \
-            OpenTimeSync-win32-x64.zip \
-            OpenTimeSync-darwin-x64.tar.gz \
+            opentimesync-ubuntu-latest/*.tar.gz \
+            opentimesync-windows-latest/*.zip \
+            opentimesync-macos-latest/*.dmg \
             --repo ${{ github.repository }} || \
           gh release upload "${{ github.ref_name }}" \
-            OpenTimeSync-linux-x64.tar.gz \
-            OpenTimeSync-win32-x64.zip \
-            OpenTimeSync-darwin-x64.tar.gz \
+            opentimesync-ubuntu-latest/*.tar.gz \
+            opentimesync-windows-latest/*.zip \
+            opentimesync-macos-latest/*.dmg \
             --repo ${{ github.repository }} --clobber
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
