@@ -57,7 +57,13 @@ jobs:
         run: npx @tauri-apps/cli icon build/icon.png --output src-tauri/icons
       - name: Build Tauri
         run: |
-          npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }}
+          set -x
+          echo "Target: ${{ matrix.target }}"
+          echo "Bundles: ${{ matrix.bundles }}"
+          echo "Rust: $(rustc --version)"
+          echo "Node: $(node --version)"
+          RUST_BACKTRACE=1 npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }} || EXITCODE=$?
+          echo "EXIT_CODE=$EXITCODE"
       - name: Sign bundles
         env:
           SIGN_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
