@@ -37,13 +37,9 @@ jobs:
         with:
           node-version: '22'
       - name: Install Rust
-        run: |
-          rustup default stable
-          rustup target add ${{ matrix.target }}
-          echo "=== Rust versions ==="
-          rustc --version
-          cargo --version
-          rustup show
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - name: Install Linux deps
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -61,9 +57,13 @@ jobs:
       - run: npm ci
       - name: Generate icons
         run: npx @tauri-apps/cli icon build/icon.png --output src-tauri/icons
-      - name: Build Rust
+      - name: Test Rust compilation
         run: |
-          RUST_BACKTRACE=1 cargo build --release --manifest-path src-tauri/Cargo.toml 2>&1 | tail -200; EC=${PIPESTATUS[0]}
+          echo 'fn main() { println!("Hello from Rust"); }' > /tmp/test.rs
+          rustc /tmp/test.rs -o /tmp/test
+          /tmp/test
+          echo "=== Now try cargo build ==="
+          cargo build --release --manifest-path src-tauri/Cargo.toml --verbose 2>&1 | head -50; EC=${PIPESTATUS[0]}
           echo "EXIT_CODE=$EC"
           exit $EC
       - name: Build Tauri bundle
