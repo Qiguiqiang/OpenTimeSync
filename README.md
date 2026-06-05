@@ -6,7 +6,7 @@ Cross-platform high-precision NTP time synchronization desktop app. **~6MB** bin
 
 | Platform | Download |
 |----------|----------|
-| Windows | `OpenTimeSync_*_x64_en-US.msi` |
+| Windows | `OpenTimeSync_2.0.64_x64_en-US.msi` |
 | macOS | `OpenTimeSync_*.dmg` (Intel + Apple Silicon) |
 | Linux | `.deb` + `.AppImage` |
 
@@ -17,6 +17,7 @@ Cross-platform high-precision NTP time synchronization desktop app. **~6MB** bin
 - **5 NTP servers** — Tencent / Aliyun / Apple / Google / Pool, switchable at runtime
 - **Weighted averaging** — outlier-removed, precision grades S+ to D
 - **Settings panel** — configurable sync interval (5–3600s), auto-sync toggle
+- **Auto-update** — built-in updater checks GitHub Releases for new versions
 - **14 timezones** — instant switch, persisted to localStorage
 - **Cyberpunk UI** — neon glow, glass morphism, frameless window, millisecond-accurate time
 - **CI/CD** — GitHub Actions auto-builds Win/Mac/Linux on tag push
@@ -77,8 +78,8 @@ The Rust backend queries the selected NTP server via raw UDP, computes offset an
 Push a tag to trigger cross-platform builds:
 
 ```bash
-git tag v2.0.13
-git push origin v2.0.13
+git tag v2.0.64
+git push origin v2.0.64
 ```
 
 GitHub Actions produces: Windows MSI + NSIS, macOS DMG (x86_64 + aarch64), Linux deb + AppImage.
@@ -106,6 +107,7 @@ GitHub Actions produces: Windows MSI + NSIS, macOS DMG (x86_64 + aarch64), Linux
 - **5 个 NTP 服务器** — 腾讯云 / 阿里云 / Apple / Google / Pool，运行时可切换
 - **加权平均算法** — 自动剔除异常值，精度等级 S+ ~ D
 - **设置面板** — 可配置同步间隔（5–3600s），自动同步开关
+- **自动更新** — 内置更新器检查 GitHub Releases 并下载安装
 - **14 个时区** — 即时切换，自动保存到 localStorage
 - **赛博朋克 UI** — 霓虹发光、玻璃拟态、无边框窗口、毫秒级时间显示
 - **CI/CD 自动编译** — GitHub Actions 推送标签即编译全平台安装包
@@ -166,8 +168,8 @@ Rust 后端通过原始 UDP socket 查询 NTP 服务器，使用加权平均 + �
 推送标签触发全平台编译：
 
 ```bash
-git tag v2.0.13
-git push origin v2.0.13
+git tag v2.0.64
+git push origin v2.0.64
 ```
 
 GitHub Actions 自动编译：Windows MSI + NSIS、macOS DMG（x86_64 + aarch64）、Linux deb + AppImage。
