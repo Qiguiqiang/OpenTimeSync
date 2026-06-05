@@ -337,8 +337,11 @@ async function doInstallUpdate() {
   st.textContent = '正在下载更新...';
   st.className = 'update-status downloading';
     try {
+      const id = crypto.randomUUID();
+      window.__TAURI_INTERNALS__.invoke('plugin:__TAURI_CHANNEL__|create', { id }).catch(() => {});
       await invokeTauri('plugin:updater|download_and_install', {
-        rid: updateAvailable.rid
+        rid: updateAvailable.rid,
+        onEvent: { id, __TAURI_CHANNEL__: true, onmessage: null }
       });
   } catch (e) {
     st.textContent = '下载失败：' + (e.message || e);
