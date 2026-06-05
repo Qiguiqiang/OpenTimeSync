@@ -54,6 +54,9 @@ jobs:
             ~/.cargo/git
             src-tauri/target
           key: v35-${{ matrix.os }}-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+      - run: npm ci
+      - name: Generate icons
+        run: npx @tauri-apps/cli icon build/icon.png --output src-tauri/icons
       - name: Test Rust compilation
         env:
           RUST_BACKTRACE: 1

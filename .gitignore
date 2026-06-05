@@ -4,7 +4,6 @@ target/
 *.log
 .DS_Store
 Thumbs.db
-src-tauri/icons/
 src-tauri/gen/
 .playwright-mcp/
 serve.js
