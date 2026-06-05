@@ -38,10 +38,12 @@ jobs:
           node-version: '22'
       - name: Install Rust
         run: |
-          rustup toolchain install stable --profile minimal --no-self-update
           rustup default stable
           rustup target add ${{ matrix.target }}
-          rustc --version && cargo --version
+          echo "=== Rust versions ==="
+          rustc --version
+          cargo --version
+          rustup show
       - name: Install Linux deps
         if: matrix.os == 'ubuntu-latest'
         run: |
@@ -61,9 +63,9 @@ jobs:
         run: npx @tauri-apps/cli icon build/icon.png --output src-tauri/icons
       - name: Build Rust
         run: |
-          RUST_BACKTRACE=1 cargo build --release --manifest-path src-tauri/Cargo.toml --target ${{ matrix.target }} --verbose 2>&1 | tail -200; EC=${PIPESTATUS[0]}
-          echo "== EXIT CODE: $EC =="
-          test "$EC" = "0" || exit "$EC"
+          RUST_BACKTRACE=1 cargo build --release --manifest-path src-tauri/Cargo.toml 2>&1 | tail -200; EC=${PIPESTATUS[0]}
+          echo "EXIT_CODE=$EC"
+          exit $EC
       - name: Build Tauri bundle
         run: npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }}
       - name: Sign bundles
