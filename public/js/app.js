@@ -339,9 +339,11 @@ async function doInstallUpdate() {
     try {
       const id = crypto.randomUUID();
       window.__TAURI_INTERNALS__.invoke('plugin:__TAURI_CHANNEL__|create', { id }).catch(() => {});
+      const channel = { id, __TAURI_CHANNEL__: true, onmessage: null, toJSON() { return { id: this.id, __TAURI_CHANNEL__: true }; } };
+      channel[Symbol.for('TAURI_CHANNEL')] = true;
       await invokeTauri('plugin:updater|download_and_install', {
         rid: updateAvailable.rid,
-        onEvent: id
+        onEvent: channel
       });
   } catch (e) {
     st.textContent = '下载失败：' + (e.message || e);
