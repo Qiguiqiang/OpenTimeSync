@@ -56,7 +56,20 @@ jobs:
       - name: Generate icons
         run: npx @tauri-apps/cli icon build/icon.png --output src-tauri/icons
       - name: Build Tauri
-        run: npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }} --verbose
+        run: |
+          LOGFILE="${{ runner.temp }}/tauri-build.log"
+          npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }} --verbose > "$LOGFILE" 2>&1 || EC=$?
+          cat "$LOGFILE"
+          test -z "$EC" || exit "$EC" 2>&1 || true
+      - name: Show error log
+        if: failure()
+        run: |
+          echo "=== Bundle dir ==="
+          ls -la "src-tauri/target/${{ matrix.target }}/release/bundle/" 2>/dev/null || echo "No bundle dir"
+          echo "=== Target dir ==="
+          ls "src-tauri/target/${{ matrix.target }}/release/" 2>/dev/null | head -20
+          echo "=== Last 20 cargo lines ==="
+          cat "src-tauri/target/${{ matrix.target }}/release/build/*/output" 2>/dev/null | tail -20 || echo "No build output"
       - name: Sign bundles
         env:
           SIGN_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
