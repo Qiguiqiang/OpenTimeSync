@@ -38,7 +38,7 @@ jobs:
         run: |
           case "${{ matrix.os }}" in
             ubuntu*)  cd dist && tar -czf OpenTimeSync-linux-${{ matrix.arch }}.tar.gz OpenTimeSync-linux-${{ matrix.arch }}/ && cd ..;;
-            windows*) cd dist && zip -r OpenTimeSync-win32-${{ matrix.arch }}.zip OpenTimeSync-win32-${{ matrix.arch }}/ && cd ..;;
+            windows*) cd dist && 7z a -tzip OpenTimeSync-win32-${{ matrix.arch }}.zip OpenTimeSync-win32-${{ matrix.arch }}/ && cd ..;;
             macos*)   cd dist && zip -r OpenTimeSync-macos-${{ matrix.arch }}.zip OpenTimeSync-darwin-${{ matrix.arch }}/ && cd ..;;
           esac
       - uses: actions/upload-artifact@v4
