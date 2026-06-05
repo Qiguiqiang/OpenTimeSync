@@ -55,20 +55,17 @@ jobs:
             src-tauri/target
           key: v35-${{ matrix.os }}-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock') }}
       - name: Test Rust compilation
+        env:
+          RUST_BACKTRACE: 1
         run: |
           cd src-tauri
-          cargo check > cargo-err.log 2>&1; EC=$?
-          echo "=== Cargo output ==="
-          cat cargo-err.log
+          cargo check 2>cargo-err.log && EC=0 || EC=$?
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat cargo-err.log >> "$GITHUB_STEP_SUMMARY" || true
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "EXIT_CODE=$EC" >> "$GITHUB_STEP_SUMMARY"
           echo "EXIT_CODE=$EC"
           exit $EC
-      - name: Upload cargo error log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: cargo-error-${{ matrix.os }}
-          path: src-tauri/cargo-err.log
-          retention-days: 1
       - name: Build Tauri bundle
         run: npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }}
       - name: Sign bundles
