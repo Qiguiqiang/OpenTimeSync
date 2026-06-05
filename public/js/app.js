@@ -289,10 +289,12 @@ DOM.syncInterval.addEventListener('change', () => {
 });
 
 let appVersion = '';
-invokeTauri('get_version').then(v => {
-  appVersion = v;
-  DOM.versionNum.textContent = 'v' + v;
-}).catch(() => { DOM.versionNum.textContent = '--'; });
+if (window.__TAURI_INTERNALS__) {
+  invokeTauri('get_version').then(v => {
+    appVersion = v;
+    DOM.versionNum.textContent = 'v' + v;
+  }).catch(() => { DOM.versionNum.textContent = '--'; });
+}
 
 let updateAvailable = null;
 async function doCheckUpdate() {
