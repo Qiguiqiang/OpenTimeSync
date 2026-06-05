@@ -34,21 +34,35 @@ jobs:
             macos*)   PLAT=darwin;;
           esac
           npx @electron/packager . OpenTimeSync --platform=$PLAT --arch=${{ matrix.arch }} --out=dist --overwrite --icon=build/icon
-      - name: Strip macOS universal binary
-        if: matrix.os == 'macos-latest'
+      - name: Strip (remove bloat)
         run: |
-          APP="dist/OpenTimeSync-darwin-${{ matrix.arch }}"
-          ARCH="${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}"
-          for f in $(find "$APP" -type f -perm -o+x); do
-            if lipo -info "$f" 2>/dev/null | grep -q "Architectures in the fat file"; then
-              lipo -thin "$ARCH" "$f" -o "$f" 2>/dev/null && echo "strip: $f"
-            fi
-          done
-          for f in $(find "$APP" -name '*.dylib' -type f); do
-            if lipo -info "$f" 2>/dev/null | grep -q "Architectures in the fat file"; then
-              lipo -thin "$ARCH" "$f" -o "$f" 2>/dev/null && echo "strip: $f"
-            fi
-          done
+          case "${{ matrix.os }}" in
+            macos*)
+              APP="dist/OpenTimeSync-darwin-${{ matrix.arch }}"
+              ARCH="${{ matrix.arch == 'arm64' && 'arm64' || 'x86_64' }}"
+              # Remove unnecessary locales
+              find "$APP" -path '*/locales/*' ! -name 'en-US*' -delete
+              # Remove SwiftShader/Vulkan
+              rm -rf "$APP/OpenTimeSync.app/Contents/Frameworks/libswiftshader*" 2>/dev/null || true
+              rm -rf "$APP/OpenTimeSync.app/Contents/Frameworks/libvk*" 2>/dev/null || true
+              # lipo thin fat binaries
+              for f in $(find "$APP" -type f -perm -o+x); do
+                lipo -info "$f" 2>/dev/null | grep -q "Architectures in the fat file" && lipo -thin "$ARCH" "$f" -o "$f" 2>/dev/null
+              done
+              for f in $(find "$APP" -name '*.dylib' -type f); do
+                lipo -info "$f" 2>/dev/null | grep -q "Architectures in the fat file" && lipo -thin "$ARCH" "$f" -o "$f" 2>/dev/null
+              done;;
+            ubuntu*)
+              APP="dist/OpenTimeSync-linux-${{ matrix.arch }}"
+              find "$APP" -path '*/locales/*' ! -name 'en-US*' -delete
+              rm -rf "$APP/libswiftshader*" "$APP/libvk*" "$APP/vk_swiftshader*" "$APP/vulkan*" 2>/dev/null || true
+              find "$APP" -type f -name '*.so' -exec strip --strip-debug {} \; 2>/dev/null || true
+              strip "$APP/OpenTimeSync" 2>/dev/null || true;;
+            windows*)
+              APP="dist/OpenTimeSync-win32-${{ matrix.arch }}"
+              find "$APP" -path '*/locales/*' ! -name 'en-US*' -delete
+              rm -rf "$APP/libswiftshader*" "$APP/dxcompiler*" "$APP/dxil*" "$APP/vk_swiftshader*" "$APP/vulkan*" 2>/dev/null || true;;
+          esac
       - name: Package
         run: |
           case "${{ matrix.os }}" in
