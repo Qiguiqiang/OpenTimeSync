@@ -302,8 +302,8 @@ async function doCheckUpdate() {
   btn.disabled = true;
   st.textContent = '检查中...';
   st.className = 'update-status checking';
-  try {
-    const result = await invokeTauri('plugin:updater|check');
+    try {
+      const result = await invokeTauri('plugin:updater|check');
     if (result && result.version) {
       updateAvailable = result;
       st.textContent = '新版本 v' + result.version + ' 可用，点击下载安装';
