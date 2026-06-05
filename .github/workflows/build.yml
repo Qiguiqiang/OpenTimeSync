@@ -56,24 +56,20 @@ jobs:
       - name: Generate icons
         run: npx @tauri-apps/cli icon build/icon.png --output src-tauri/icons
       - name: Build Tauri
-        run: |
-          set -x
-          echo "Target: ${{ matrix.target }}"
-          echo "Bundles: ${{ matrix.bundles }}"
-          echo "Rust: $(rustc --version)"
-          echo "Node: $(node --version)"
-          RUST_BACKTRACE=1 npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }} || EXITCODE=$?
-          echo "EXIT_CODE=$EXITCODE"
+        run: npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }}
       - name: Sign bundles
         env:
           SIGN_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
         if: env.SIGN_KEY != ''
         run: |
+          KEY_FILE=$(mktemp)
+          printf '%s\n' "$SIGN_KEY" > "$KEY_FILE"
           find "src-tauri/target/${{ matrix.target }}/release/bundle" -type f \( \
             -name "*.msi" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) \
             | while read f; do
-            npx tauri signer sign -k "$SIGN_KEY" "$f"
+            npx tauri signer sign -k "$KEY_FILE" -p "" "$f"
           done
+          rm -f "$KEY_FILE"
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
