@@ -59,11 +59,11 @@ jobs:
         run: npx @tauri-apps/cli icon build/icon.png --output src-tauri/icons
       - name: Test Rust compilation
         run: |
-          echo 'fn main() { println!("Hello from Rust"); }' > /tmp/test.rs
-          rustc /tmp/test.rs -o /tmp/test
-          /tmp/test
-          echo "=== Now try cargo build ==="
-          cargo build --release --manifest-path src-tauri/Cargo.toml --verbose 2>&1 | head -50; EC=${PIPESTATUS[0]}
+          cd src-tauri
+          cargo version
+          rustc --version
+          echo "=== Try cargo check ==="
+          cargo check --offline 2>&1; EC=$?
           echo "EXIT_CODE=$EC"
           exit $EC
       - name: Build Tauri bundle
