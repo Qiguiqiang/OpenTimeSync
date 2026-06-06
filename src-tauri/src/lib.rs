@@ -4,7 +4,7 @@ use ntp::{query_ntp, remove_outliers, weighted_average, NtpSample, ServerLatency
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::Emitter;
 use tauri_plugin_updater::UpdaterExt;
 
@@ -22,6 +22,7 @@ struct NtpTimePayload {
     ntp_offset: f64,
     ntp_rtt: i64,
     has_fresh_data: bool,
+    sample_id: u64,
     ntp_server: String,
     server_latencies: HashMap<String, ServerLatency>,
 }
@@ -38,7 +39,6 @@ struct AppState {
     last_payload: Mutex<Option<NtpTimePayload>>,
     cycle_count: Mutex<u64>,
     auto_sync: Mutex<bool>,
-    last_sync_cycle: Mutex<u64>,
     sync_interval_secs: Mutex<u64>,
     update_status: Mutex<UpdateStatusPayload>,
     downloaded_update: Mutex<Option<DownloadedUpdate>>,
@@ -189,10 +189,105 @@ fn sync_system_time(state: tauri::State<Arc<AppState>>) -> Result<String, String
     match payload {
         Some(p) => {
             set_windows_system_time(p.server_time)?;
-            *state.last_sync_cycle.lock().unwrap() = *state.cycle_count.lock().unwrap();
-            Ok("系统时间已同步".to_string())
+            Ok("系统时间已按当前NTP校正值同步".to_string())
         }
         None => Err("尚无 NTP 数据".to_string()),
+    }
+}
+
+fn build_ntp_payload(active_host: &str, previous_payload: Option<&NtpTimePayload>, sample_id: u64) -> NtpTimePayload {
+    let mut server_latencies = HashMap::new();
+    let mut active_samples: Vec<NtpSample> = Vec::new();
+
+    for (host, _name, _label) in NTP_SERVERS {
+        match query_ntp(host) {
+            Ok(sample) => {
+                server_latencies.insert(
+                    host.to_string(),
+                    ServerLatency {
+                        rtt: sample.rtt.round() as i64,
+                        status: "ok".to_string(),
+                    },
+                );
+                if *host == active_host {
+                    active_samples.push(sample);
+                }
+            }
+            Err(_) => {
+                server_latencies.insert(
+                    host.to_string(),
+                    ServerLatency {
+                        rtt: -1,
+                        status: "timeout".to_string(),
+                    },
+                );
+            }
+        }
+    }
+
+    let has_fresh_data = !active_samples.is_empty();
+    let ntp_offset = if has_fresh_data {
+        let filtered = remove_outliers(&active_samples, 0.1);
+        weighted_average(&filtered)
+    } else {
+        previous_payload.map(|p| p.ntp_offset).unwrap_or(0.0)
+    };
+
+    let ntp_rtt = if active_samples.is_empty() {
+        -1.0
+    } else {
+        active_samples.iter().map(|s| s.rtt).fold(f64::MAX, |a, b| a.min(b))
+    };
+
+    let corrected_time = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as f64 + ntp_offset) as u64;
+
+    NtpTimePayload {
+        server_time: corrected_time,
+        ntp_offset,
+        ntp_rtt: if ntp_rtt.is_finite() && ntp_rtt > 0.0 && ntp_rtt < 1_000_000.0 {
+            ntp_rtt.round() as i64
+        } else {
+            -1
+        },
+        has_fresh_data,
+        sample_id,
+        ntp_server: active_host.to_string(),
+        server_latencies,
+    }
+}
+
+fn refresh_ntp_payload(app_handle: Option<&tauri::AppHandle>, app_state: &Arc<AppState>) -> NtpTimePayload {
+    let active_host = app_state.active_server.lock().unwrap().host.clone();
+    let previous_payload = app_state.last_payload.lock().unwrap().clone();
+    let sample_id = {
+        let mut cycle = app_state.cycle_count.lock().unwrap();
+        *cycle += 1;
+        *cycle
+    };
+
+    let payload = build_ntp_payload(&active_host, previous_payload.as_ref(), sample_id);
+    *app_state.last_payload.lock().unwrap() = Some(payload.clone());
+
+    if let Some(handle) = app_handle {
+        let _ = handle.emit("ntp-time", &payload);
+    }
+
+    payload
+}
+
+#[tauri::command]
+fn sync_ntp_now(
+    app: tauri::AppHandle,
+    state: tauri::State<Arc<AppState>>,
+) -> Result<String, String> {
+    let payload = refresh_ntp_payload(Some(&app), state.inner());
+    if payload.has_fresh_data {
+        Ok(format!("NTP已同步 偏移 {:.1}ms 延迟 {}ms", payload.ntp_offset, payload.ntp_rtt))
+    } else {
+        Err("NTP无响应，已保留上次有效同步结果".to_string())
     }
 }
 
@@ -505,89 +600,18 @@ fn install_downloaded_update(
 
 fn run_ntp_loop(app_handle: tauri::AppHandle, app_state: Arc<AppState>) {
     std::thread::spawn(move || {
+        let _ = refresh_ntp_payload(Some(&app_handle), &app_state);
+        let mut last_auto_sync_at = Instant::now();
+
         loop {
-            let active_host = app_state.active_server.lock().unwrap().host.clone();
-            let previous_payload = app_state.last_payload.lock().unwrap().clone();
-
-            let mut server_latencies = HashMap::new();
-            let mut active_samples: Vec<NtpSample> = Vec::new();
-
-            for (host, _name, _label) in NTP_SERVERS {
-                match query_ntp(host) {
-                    Ok(sample) => {
-                        server_latencies.insert(
-                            host.to_string(),
-                            ServerLatency {
-                                rtt: sample.rtt.round() as i64,
-                                status: "ok".to_string(),
-                            },
-                        );
-                        if *host == active_host {
-                            active_samples.push(sample);
-                        }
-                    }
-                    Err(_) => {
-                        server_latencies.insert(
-                            host.to_string(),
-                            ServerLatency {
-                                rtt: -1,
-                                status: "timeout".to_string(),
-                            },
-                        );
-                    }
-                }
+            let auto_sync = *app_state.auto_sync.lock().unwrap();
+            let interval_secs = *app_state.sync_interval_secs.lock().unwrap();
+            if auto_sync && last_auto_sync_at.elapsed() >= Duration::from_secs(interval_secs) {
+                let _ = refresh_ntp_payload(Some(&app_handle), &app_state);
+                last_auto_sync_at = Instant::now();
             }
 
-            let has_fresh_data = !active_samples.is_empty();
-            let ntp_offset = if has_fresh_data {
-                let filtered = remove_outliers(&active_samples, 0.1);
-                weighted_average(&filtered)
-            } else {
-                previous_payload.as_ref().map(|p| p.ntp_offset).unwrap_or(0.0)
-            };
-
-            let ntp_rtt = if active_samples.is_empty() {
-                -1.0
-            } else {
-                active_samples.iter().map(|s| s.rtt).fold(f64::MAX, |a, b| a.min(b))
-            };
-
-            let corrected_time = (std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as f64 + ntp_offset) as u64;
-
-            let payload = NtpTimePayload {
-                server_time: corrected_time,
-                ntp_offset,
-                ntp_rtt: if ntp_rtt.is_finite() && ntp_rtt > 0.0 && ntp_rtt < 1_000_000.0 {
-                    ntp_rtt.round() as i64
-                } else {
-                    -1
-                },
-                has_fresh_data,
-                ntp_server: active_host,
-                server_latencies,
-            };
-
-            let cycle = *app_state.cycle_count.lock().unwrap();
-            *app_state.last_payload.lock().unwrap() = Some(payload.clone());
-            *app_state.cycle_count.lock().unwrap() = cycle + 1;
-
-            if *app_state.auto_sync.lock().unwrap() && payload.has_fresh_data {
-                let last_sync = *app_state.last_sync_cycle.lock().unwrap();
-                let interval_secs = *app_state.sync_interval_secs.lock().unwrap();
-                let cooldown = (interval_secs + 1) / 2;
-                if cycle >= last_sync + cooldown {
-                    if let Some(p) = app_state.last_payload.lock().unwrap().clone() {
-                        let _ = set_windows_system_time(p.server_time);
-                        *app_state.last_sync_cycle.lock().unwrap() = cycle;
-                    }
-                }
-            }
-
-            let _ = app_handle.emit("ntp-time", &payload);
-            std::thread::sleep(Duration::from_secs(2));
+            std::thread::sleep(Duration::from_millis(500));
         }
     });
 }
@@ -603,7 +627,6 @@ pub fn run() {
         last_payload: Mutex::new(None),
         cycle_count: Mutex::new(0),
         auto_sync: Mutex::new(false),
-        last_sync_cycle: Mutex::new(0),
         sync_interval_secs: Mutex::new(30),
         update_status: Mutex::new(UpdateStatusPayload {
             phase: "idle".to_string(),
@@ -623,6 +646,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ping,
             get_version,
+            sync_ntp_now,
             sync_system_time,
             set_auto_sync,
             get_auto_sync,

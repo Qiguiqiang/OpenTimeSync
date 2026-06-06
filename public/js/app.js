@@ -21,6 +21,7 @@ const DOM = {
   ntpSelector: document.getElementById('ntpSelector'),
   btnSettings: document.getElementById('btnSettings'),
   settingsPanel: document.getElementById('settingsPanel'),
+  btnSyncNtpNow: document.getElementById('btnSyncNtpNow'),
   btnSyncNow: document.getElementById('btnSyncNow'),
   chkAutoSync: document.getElementById('chkAutoSync'),
   syncInterval: document.getElementById('syncInterval'),
@@ -61,6 +62,7 @@ const State = {
   maxSamples: 20,
   isSynced: false,
   hasFreshData: false,
+  lastSampleId: -1,
   syncBase: 0,
   perfBase: 0,
   offsetStd: 0,
@@ -98,19 +100,22 @@ function getPrecisionClass(tier) {
 function handleTime(msg) {
   if (!msg || typeof msg.ntp_offset === 'undefined') return;
   const offset = msg.ntp_offset;
+  const sampleId = typeof msg.sample_id === 'number' ? msg.sample_id : State.lastSampleId;
+  const isNewSample = sampleId !== State.lastSampleId;
   State.hasFreshData = msg.has_fresh_data !== false;
 
-  if (State.hasFreshData) {
+  if (isNewSample && State.hasFreshData) {
     State.samples.push(offset);
     if (State.samples.length > State.maxSamples) State.samples.shift();
   }
 
+  State.lastSampleId = sampleId;
   State.ntpOffset = offset;
   if (msg.ntp_server) State.ntpServer = msg.ntp_server;
   if (msg.ntp_rtt !== undefined) State.ntpRtt = msg.ntp_rtt;
   if (msg.server_latencies) State.serverLatencies = msg.server_latencies;
 
-  if (State.hasFreshData) {
+  if (isNewSample && State.hasFreshData) {
     calculateOffset();
   }
   updateUI();
@@ -190,7 +195,11 @@ function setNtp(host) {
   invokeTauri('set_ntp_server', { server: host }).then(() => {
     State.ntpServer = host;
     State.samples = [];
+    State.lastSampleId = -1;
     renderNtpList();
+    return invokeTauri('sync_ntp_now');
+  }).then(() => {
+    return pollOnce();
   }).catch(() => {});
   DOM.ntpPanel.classList.remove('open');
 }
@@ -286,9 +295,26 @@ document.addEventListener('click', (e) => {
   }
 });
 
+DOM.btnSyncNtpNow.addEventListener('click', async () => {
+  DOM.btnSyncNtpNow.disabled = true;
+  DOM.syncStatus.textContent = '正在同步NTP...';
+  try {
+    const res = await invokeTauri('sync_ntp_now');
+    await pollOnce();
+    DOM.syncStatus.textContent = res;
+    DOM.syncStatus.style.color = 'var(--green)';
+  } catch (e) {
+    await pollOnce().catch(() => {});
+    DOM.syncStatus.textContent = e.message || 'NTP同步失败';
+    DOM.syncStatus.style.color = 'var(--red)';
+  }
+  DOM.btnSyncNtpNow.disabled = false;
+  setTimeout(() => { DOM.syncStatus.textContent = ''; }, 5000);
+});
+
 DOM.btnSyncNow.addEventListener('click', async () => {
   DOM.btnSyncNow.disabled = true;
-  DOM.syncStatus.textContent = '同步中...';
+  DOM.syncStatus.textContent = '正在同步系统时间...';
   try {
     const res = await invokeTauri('sync_system_time');
     DOM.syncStatus.textContent = res;
@@ -303,6 +329,9 @@ DOM.btnSyncNow.addEventListener('click', async () => {
 
 DOM.chkAutoSync.addEventListener('change', () => {
   invokeTauri('set_auto_sync', { enabled: DOM.chkAutoSync.checked }).catch(() => {});
+  if (DOM.chkAutoSync.checked) {
+    invokeTauri('sync_ntp_now').then(() => pollOnce()).catch(() => {});
+  }
 });
 
 DOM.syncInterval.addEventListener('change', () => {

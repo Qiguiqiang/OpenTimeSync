@@ -22,14 +22,15 @@
   </div>
   <div class="settings-panel" id="settingsPanel">
     <div class="settings-group">
-      <div class="settings-title">系统时间同步</div>
+      <div class="settings-title">NTP同步</div>
+      <button class="sync-btn" id="btnSyncNtpNow">立即同步NTP</button>
       <button class="sync-btn" id="btnSyncNow">立即同步到系统</button>
       <label class="sync-toggle">
         <input type="checkbox" id="chkAutoSync">
-        <span>自动同步</span>
+        <span>自动同步NTP</span>
       </label>
       <div class="sync-interval-row">
-        <span>间隔</span>
+        <span>NTP间隔</span>
         <input type="number" id="syncInterval" min="5" max="3600" value="30">
         <span>秒</span>
       </div>
