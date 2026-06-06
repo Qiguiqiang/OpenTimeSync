@@ -402,16 +402,14 @@ function setupTitlebar() {
     document.getElementById('btnMaximize').onclick = () => invoke('maximize_window');
     document.getElementById('btnClose').onclick = () => invoke('close_window');
     const tb = document.querySelector('.titlebar');
-    let dragTimer = null;
     tb.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (e.target.closest('.titlebar-controls, .tb-btn')) return;
-      if (dragTimer) {
-        clearTimeout(dragTimer); dragTimer = null;
-        invoke('maximize_window');
-      } else {
-        dragTimer = setTimeout(() => { dragTimer = null; invoke('start_drag'); }, 250);
-      }
+      invoke('start_drag');
+    });
+    tb.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.titlebar-controls, .tb-btn')) return;
+      invoke('maximize_window');
     });
   } else {
     document.querySelector('.titlebar')?.remove();
