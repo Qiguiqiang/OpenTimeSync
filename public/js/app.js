@@ -482,8 +482,40 @@ function setupTitlebar() {
     document.getElementById('btnMaximize').onclick = () => invoke('maximize_window');
     document.getElementById('btnClose').onclick = () => invoke('close_window');
     const dragRegion = document.getElementById('titlebarDragRegion');
+    let pendingDrag = null;
+
+    dragRegion?.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.titlebar-controls, .tb-btn, .settings-panel')) return;
+      pendingDrag = { x: e.clientX, y: e.clientY };
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!pendingDrag) return;
+      if ((e.buttons & 1) !== 1) {
+        pendingDrag = null;
+        return;
+      }
+
+      const dx = Math.abs(e.clientX - pendingDrag.x);
+      const dy = Math.abs(e.clientY - pendingDrag.y);
+      if (dx < 3 && dy < 3) return;
+
+      pendingDrag = null;
+      invoke('start_drag');
+    });
+
+    document.addEventListener('mouseup', () => {
+      pendingDrag = null;
+    });
+
+    window.addEventListener('blur', () => {
+      pendingDrag = null;
+    });
+
     dragRegion?.addEventListener('dblclick', (e) => {
       if (e.target.closest('.titlebar-controls, .tb-btn, .settings-panel')) return;
+      pendingDrag = null;
       invoke('maximize_window');
     });
   } else {
