@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use tauri::Emitter;
+use tauri_plugin_updater::UpdaterExt;
 
 const NTP_SERVERS: &[(&str, &str, &str)] = &[
     ("ntp.tencent.com", "Tencent", "腾讯云"),
@@ -38,6 +39,18 @@ struct AppState {
     auto_sync: Mutex<bool>,
     last_sync_cycle: Mutex<u64>,
     sync_interval_secs: Mutex<u64>,
+    update_status: Mutex<UpdateStatusPayload>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateStatusPayload {
+    phase: String,
+    current_version: String,
+    version: Option<String>,
+    message: String,
+    downloaded_bytes: Option<u64>,
+    total_bytes: Option<u64>,
 }
 
 #[allow(non_snake_case)]
@@ -243,6 +256,208 @@ fn get_version() -> String {
     env!("CARGO_PKG_VERSION").to_string()
 }
 
+fn set_update_status(
+    state: &Arc<AppState>,
+    phase: impl Into<String>,
+    current_version: impl Into<String>,
+    version: Option<String>,
+    message: impl Into<String>,
+    downloaded_bytes: Option<u64>,
+    total_bytes: Option<u64>,
+) -> UpdateStatusPayload {
+    let status = UpdateStatusPayload {
+        phase: phase.into(),
+        current_version: current_version.into(),
+        version,
+        message: message.into(),
+        downloaded_bytes,
+        total_bytes,
+    };
+    *state.update_status.lock().unwrap() = status.clone();
+    status
+}
+
+fn format_update_error(err: impl std::fmt::Display) -> String {
+    let msg = err.to_string();
+    if msg.contains("signature") {
+        "更新签名无效，请先检查发布签名配置".to_string()
+    } else if msg.contains("ReleaseNotFound") {
+        "未找到可用更新".to_string()
+    } else {
+        msg
+    }
+}
+
+#[tauri::command]
+fn get_update_status(state: tauri::State<Arc<AppState>>) -> UpdateStatusPayload {
+    state.update_status.lock().unwrap().clone()
+}
+
+#[tauri::command]
+async fn check_for_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<UpdateStatusPayload, String> {
+    let app_state = state.inner().clone();
+    let current_version = app.package_info().version.to_string();
+
+    set_update_status(
+        &app_state,
+        "checking",
+        current_version.clone(),
+        None,
+        "正在检查更新...",
+        None,
+        None,
+    );
+
+    let updater = app
+        .updater_builder()
+        .timeout(Duration::from_secs(20))
+        .build()
+        .map_err(format_update_error)?;
+
+    match updater.check().await.map_err(format_update_error)? {
+        Some(update) => Ok(set_update_status(
+            &app_state,
+            "available",
+            current_version,
+            Some(update.version.clone()),
+            format!("发现新版本 v{}，点击下载并安装", update.version),
+            None,
+            None,
+        )),
+        None => Ok(set_update_status(
+            &app_state,
+            "upToDate",
+            current_version,
+            None,
+            "已是最新版本",
+            None,
+            None,
+        )),
+    }
+}
+
+#[tauri::command]
+fn install_available_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let current_version = app.package_info().version.to_string();
+
+    {
+        let status = app_state.update_status.lock().unwrap().clone();
+        if matches!(status.phase.as_str(), "checking" | "downloading" | "installing") {
+            return Err("更新任务正在进行中".to_string());
+        }
+    }
+
+    set_update_status(
+        &app_state,
+        "downloading",
+        current_version.clone(),
+        None,
+        "正在准备下载安装...",
+        Some(0),
+        None,
+    );
+
+    tauri::async_runtime::spawn(async move {
+        let result: Result<(), String> = async {
+            let updater = app
+                .updater_builder()
+                .timeout(Duration::from_secs(30))
+                .build()
+                .map_err(format_update_error)?;
+
+            let update = updater
+                .check()
+                .await
+                .map_err(format_update_error)?
+                .ok_or_else(|| "已是最新版本".to_string())?;
+
+            let version = update.version.clone();
+            let mut downloaded_bytes = 0u64;
+
+            set_update_status(
+                &app_state,
+                "downloading",
+                current_version.clone(),
+                Some(version.clone()),
+                format!("正在下载 v{}", version),
+                Some(0),
+                None,
+            );
+
+            update
+                .download_and_install(
+                    |chunk_length, content_length| {
+                        downloaded_bytes += chunk_length as u64;
+                        let message = match content_length {
+                            Some(total) if total > 0 => {
+                                let progress =
+                                    (downloaded_bytes as f64 / total as f64 * 100.0).round();
+                                format!("正在下载 v{} ({}%)", version, progress)
+                            }
+                            _ => format!("正在下载 v{}", version),
+                        };
+                        set_update_status(
+                            &app_state,
+                            "downloading",
+                            current_version.clone(),
+                            Some(version.clone()),
+                            message,
+                            Some(downloaded_bytes),
+                            content_length,
+                        );
+                    },
+                    || {
+                        set_update_status(
+                            &app_state,
+                            "installing",
+                            current_version.clone(),
+                            Some(version.clone()),
+                            format!("下载完成，正在安装 v{}", version),
+                            None,
+                            None,
+                        );
+                    },
+                )
+                .await
+                .map_err(format_update_error)?;
+
+            set_update_status(
+                &app_state,
+                "installing",
+                current_version.clone(),
+                Some(version.clone()),
+                format!("安装程序已启动，正在应用 v{}", version),
+                None,
+                None,
+            );
+
+            Ok(())
+        }
+        .await;
+
+        if let Err(err) = result {
+            set_update_status(
+                &app_state,
+                "error",
+                current_version,
+                None,
+                format!("更新失败：{}", err),
+                None,
+                None,
+            );
+        }
+    });
+
+    Ok(())
+}
+
 fn run_ntp_loop(app_handle: tauri::AppHandle, app_state: Arc<AppState>) {
     std::thread::spawn(move || {
         loop {
@@ -342,6 +557,14 @@ pub fn run() {
         auto_sync: Mutex::new(false),
         last_sync_cycle: Mutex::new(0),
         sync_interval_secs: Mutex::new(30),
+        update_status: Mutex::new(UpdateStatusPayload {
+            phase: "idle".to_string(),
+            current_version: env!("CARGO_PKG_VERSION").to_string(),
+            version: None,
+            message: String::new(),
+            downloaded_bytes: None,
+            total_bytes: None,
+        }),
     });
 
     tauri::Builder::default()
@@ -362,6 +585,9 @@ pub fn run() {
             maximize_window,
             close_window,
             start_drag,
+            get_update_status,
+            check_for_update,
+            install_available_update,
         ])
         .setup(move |app| {
             run_ntp_loop(app.handle().clone(), app_state.clone());

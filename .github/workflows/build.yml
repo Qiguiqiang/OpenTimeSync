@@ -7,10 +7,12 @@ permissions:
   contents: write
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
 jobs:
   build:
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+      UPDATE_PRIVATE_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
     defaults:
       run:
         shell: bash
@@ -72,9 +74,9 @@ jobs:
       - name: Build Tauri bundle
         run: npx tauri build --bundles "${{ matrix.bundles }}" --target ${{ matrix.target }}
       - name: Sign bundles
-        if: false
+        if: startsWith(github.ref, 'refs/tags/v') && env.UPDATE_PRIVATE_KEY != ''
         env:
-          SIGN_KEY: ${{ secrets.UPDATE_PRIVATE_KEY }}
+          SIGN_KEY: ${{ env.UPDATE_PRIVATE_KEY }}
         run: |
           KEY_FILE=$(mktemp)
           printf '%s' "$SIGN_KEY" > "$KEY_FILE"
@@ -98,6 +100,20 @@ jobs:
       contents: write
     steps:
       - uses: actions/download-artifact@v4
+      - name: Verify updater signatures
+        run: |
+          missing=0
+          while IFS= read -r -d '' f; do
+            if [ ! -f "${f}.sig" ]; then
+              echo "Missing updater signature for $f"
+              missing=1
+            fi
+          done < <(find opentimesync-* -type f \( -name "*.msi" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -print0)
+
+          if [ "$missing" -ne 0 ]; then
+            echo "Signed updater artifacts are required for tagged releases."
+            exit 1
+          fi
       - name: Generate updater.json
         run: |
           VERSION="${GITHUB_REF_NAME#v}"

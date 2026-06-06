@@ -60,6 +60,14 @@ body {
   padding: 0 8px;
 }
 
+.titlebar-drag-region {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1;
+  height: 100%;
+}
+
 .titlebar-title {
   font-family: var(--font-display);
   font-size: 0.7rem;
@@ -97,13 +105,15 @@ body {
   display: none;
   position: fixed;
   top: 32px;
-  right: 0;
+  right: 8px;
   width: 280px;
   background: #0d1330;
   border: 1px solid var(--border);
-  border-top: none;
+  border-top: 1px solid var(--border);
+  border-radius: 0 0 6px 6px;
   padding: 16px;
   z-index: 100;
+  box-shadow: 0 16px 32px rgba(0, 0, 0, 0.35);
 }
 .settings-panel.open { display: block; }
 .settings-group { margin-bottom: 16px; }

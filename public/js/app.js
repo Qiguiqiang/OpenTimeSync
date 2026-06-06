@@ -296,42 +296,122 @@ if (window.__TAURI_INTERNALS__) {
   }).catch(() => { DOM.versionNum.textContent = '--'; });
 }
 
-let updateAvailable = null;
-async function doCheckUpdate() {
-  const btn = DOM.btnCheckUpdate, st = DOM.updateStatus;
-  btn.disabled = true;
-  st.textContent = '检查中...';
-  st.className = 'update-status checking';
-    try {
-      const result = await Promise.race([
-        invokeTauri('plugin:updater|check', { timeout: 15000, proxy: 'http://192.168.23.4:7897' }),
-        new Promise((_, rej) => setTimeout(() => rej(new Error('连接超时')), 20000))
-      ]);
-    if (result && result.version) {
-      updateAvailable = result;
-      st.textContent = '新版本 v' + result.version + ' 可用，点击打开下载';
-      st.className = 'update-status ready';
-      btn.textContent = '打开下载页面';
-      btn.onclick = () => {
-        try { window.open('https://github.com/Qiguiqiang/OpenTimeSync/releases/latest'); }
-        catch (e) { st.textContent = '无法打开浏览器：' + e.message; st.className = 'update-status error'; }
-      };
-    } else {
-      updateAvailable = null;
-      st.textContent = '已是最新版本';
-      st.className = 'update-status';
-      btn.textContent = '检查更新';
-      btn.onclick = doCheckUpdate;
+let updatePollTimer = 0;
+let updateAvailable = false;
+
+function stopUpdatePolling() {
+  if (updatePollTimer) {
+    clearInterval(updatePollTimer);
+    updatePollTimer = 0;
+  }
+}
+
+function updateStatusClass(phase) {
+  if (phase === 'checking') return 'update-status checking';
+  if (phase === 'available') return 'update-status ready';
+  if (phase === 'downloading' || phase === 'installing') return 'update-status downloading';
+  if (phase === 'error') return 'update-status error';
+  return 'update-status';
+}
+
+function renderUpdateStatus(status) {
+  if (!status) return;
+
+  DOM.updateStatus.textContent = status.message || '';
+  DOM.updateStatus.className = updateStatusClass(status.phase);
+
+  updateAvailable = status.phase === 'available';
+
+  if (status.phase === 'checking') {
+    DOM.btnCheckUpdate.disabled = true;
+    DOM.btnCheckUpdate.textContent = '检查中...';
+    return;
+  }
+
+  if (status.phase === 'available') {
+    DOM.btnCheckUpdate.disabled = false;
+    DOM.btnCheckUpdate.textContent = '下载并安装';
+    return;
+  }
+
+  if (status.phase === 'downloading') {
+    DOM.btnCheckUpdate.disabled = true;
+    DOM.btnCheckUpdate.textContent = '下载中...';
+    return;
+  }
+
+  if (status.phase === 'installing') {
+    DOM.btnCheckUpdate.disabled = true;
+    DOM.btnCheckUpdate.textContent = '安装中...';
+    DOM.btnCheckUpdate.classList.add('installing');
+    return;
+  }
+
+  DOM.btnCheckUpdate.disabled = false;
+  DOM.btnCheckUpdate.textContent = '检查更新';
+  DOM.btnCheckUpdate.classList.remove('installing');
+}
+
+async function pollUpdateStatus() {
+  try {
+    const status = await invokeTauri('get_update_status');
+    renderUpdateStatus(status);
+    if (!['checking', 'downloading', 'installing'].includes(status.phase)) {
+      stopUpdatePolling();
     }
   } catch (e) {
-    st.textContent = '检查失败：' + (e.message || e);
-    st.className = 'update-status error';
-    btn.textContent = '检查更新';
-    btn.onclick = doCheckUpdate;
+    stopUpdatePolling();
+    DOM.updateStatus.textContent = '获取更新状态失败：' + (e.message || e);
+    DOM.updateStatus.className = 'update-status error';
+    DOM.btnCheckUpdate.disabled = false;
+    DOM.btnCheckUpdate.textContent = '检查更新';
+    DOM.btnCheckUpdate.classList.remove('installing');
   }
-  btn.disabled = false;
 }
-DOM.btnCheckUpdate.addEventListener('click', doCheckUpdate);
+
+function startUpdatePolling() {
+  stopUpdatePolling();
+  pollUpdateStatus();
+  updatePollTimer = setInterval(pollUpdateStatus, 500);
+}
+
+async function doCheckUpdate() {
+  renderUpdateStatus({ phase: 'checking', message: '检查中...' });
+  try {
+    const status = await invokeTauri('check_for_update');
+    renderUpdateStatus(status);
+  } catch (e) {
+    renderUpdateStatus({
+      phase: 'error',
+      message: '检查失败：' + (e.message || e)
+    });
+  }
+}
+
+async function startInstallUpdate() {
+  DOM.updateStatus.textContent = '正在准备下载安装...';
+  DOM.updateStatus.className = 'update-status downloading';
+  DOM.btnCheckUpdate.disabled = true;
+  DOM.btnCheckUpdate.textContent = '下载中...';
+
+  try {
+    await invokeTauri('install_available_update');
+    startUpdatePolling();
+  } catch (e) {
+    renderUpdateStatus({
+      phase: 'error',
+      message: '启动更新失败：' + (e.message || e)
+    });
+  }
+}
+
+DOM.btnCheckUpdate.addEventListener('click', () => {
+  if (updateAvailable) {
+    startInstallUpdate();
+  } else {
+    doCheckUpdate();
+  }
+});
 
 let lastSec = -1, lastMin = -1, lastHour = -1;
 function animatePulse(el) {
@@ -401,14 +481,9 @@ function setupTitlebar() {
     document.getElementById('btnMinimize').onclick = () => invoke('minimize_window');
     document.getElementById('btnMaximize').onclick = () => invoke('maximize_window');
     document.getElementById('btnClose').onclick = () => invoke('close_window');
-    const tb = document.querySelector('.titlebar');
-    tb.addEventListener('mousedown', (e) => {
-      if (e.button !== 0) return;
-      if (e.target.closest('.titlebar-controls, .tb-btn')) return;
-      invoke('start_drag');
-    });
-    tb.addEventListener('dblclick', (e) => {
-      if (e.target.closest('.titlebar-controls, .tb-btn')) return;
+    const dragRegion = document.getElementById('titlebarDragRegion');
+    dragRegion?.addEventListener('dblclick', (e) => {
+      if (e.target.closest('.titlebar-controls, .tb-btn, .settings-panel')) return;
       invoke('maximize_window');
     });
   } else {
@@ -467,11 +542,9 @@ function cleanup() {
     setupTitlebar();
     initTimezone();
     startNtpPolling();
-    setTimeout(() => testInvoke('ping'), 500);
-    setTimeout(() => testInvoke('get_cycle_count'), 1000);
-    setTimeout(() => testInvoke('get_ntp_status'), 1500);
     invokeTauri('get_auto_sync').then(v => { DOM.chkAutoSync.checked = v; }).catch(() => {});
     invokeTauri('get_sync_interval').then(v => { DOM.syncInterval.value = v; }).catch(() => {});
+    invokeTauri('get_update_status').then(renderUpdateStatus).catch(() => {});
   } else {
     setStatus('danger', 'BROWSER MODE');
     document.querySelector('.titlebar')?.remove();
