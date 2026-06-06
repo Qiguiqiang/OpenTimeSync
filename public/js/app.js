@@ -309,10 +309,10 @@ async function doCheckUpdate() {
       ]);
     if (result && result.version) {
       updateAvailable = result;
-      st.textContent = '新版本 v' + result.version + ' 可用，点击下载安装';
+      st.textContent = '新版本 v' + result.version + ' 可用，点击打开下载';
       st.className = 'update-status ready';
-      btn.textContent = '下载并安装';
-      btn.onclick = doInstallUpdate;
+      btn.textContent = '打开下载页面';
+      btn.onclick = () => window.open('https://github.com/Qiguiqiang/OpenTimeSync/releases/latest');
     } else {
       updateAvailable = null;
       st.textContent = '已是最新版本';
@@ -327,32 +327,6 @@ async function doCheckUpdate() {
     btn.onclick = doCheckUpdate;
   }
   btn.disabled = false;
-}
-async function doInstallUpdate() {
-  const btn = DOM.btnCheckUpdate, st = DOM.updateStatus;
-  if (!updateAvailable) return;
-  btn.disabled = true;
-  btn.classList.add('installing');
-  btn.textContent = '下载中...';
-  st.textContent = '正在下载更新...';
-  st.className = 'update-status downloading';
-    try {
-      const id = crypto.randomUUID();
-      window.__TAURI_INTERNALS__.invoke('plugin:__TAURI_CHANNEL__|create', { id }).catch(() => {});
-      const channel = { id, __TAURI_CHANNEL__: true, onmessage: null, toJSON() { return { id: this.id, __TAURI_CHANNEL__: true }; } };
-      channel[Symbol.for('TAURI_CHANNEL')] = true;
-      await invokeTauri('plugin:updater|download_and_install', {
-        rid: updateAvailable.rid,
-        onEvent: channel
-      });
-  } catch (e) {
-    st.textContent = '下载失败：' + (e.message || e);
-    st.className = 'update-status error';
-    btn.textContent = '检查更新';
-    btn.onclick = doCheckUpdate;
-    btn.classList.remove('installing');
-    btn.disabled = false;
-  }
 }
 DOM.btnCheckUpdate.addEventListener('click', doCheckUpdate);
 
@@ -425,6 +399,11 @@ function setupTitlebar() {
     document.getElementById('btnMaximize').onclick = () => invoke('maximize_window');
     document.getElementById('btnClose').onclick = () => invoke('close_window');
     const tb = document.querySelector('.titlebar');
+    tb.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return;
+      if (e.target.closest('.titlebar-controls, .tb-btn, .settings-panel')) return;
+      invoke('start_drag');
+    });
     tb.addEventListener('dblclick', (e) => {
       if (e.target.closest('.titlebar-controls, .tb-btn, .settings-panel')) return;
       invoke('maximize_window');
