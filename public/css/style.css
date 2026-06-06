@@ -66,6 +66,7 @@ body {
   min-width: 0;
   flex: 1;
   height: 100%;
+  cursor: default;
 }
 
 .titlebar-title {
@@ -76,6 +77,7 @@ body {
   text-shadow: 0 0 6px var(--cyan-dim);
   letter-spacing: 3px;
   opacity: 0.7;
+  pointer-events: none;
 }
 
 .titlebar-controls {

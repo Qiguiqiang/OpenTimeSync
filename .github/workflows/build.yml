@@ -24,7 +24,7 @@ jobs:
             bundles: deb,appimage
           - os: windows-2022
             target: x86_64-pc-windows-msvc
-            bundles: msi
+            bundles: msi,nsis
           - os: macos-14
             target: x86_64-apple-darwin
             bundles: dmg
@@ -38,6 +38,19 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
+      - name: Validate app version
+        run: |
+          APP_VERSION=$(node -p "require('./package.json').version")
+          CARGO_VERSION=$(awk -F'"' '/^version = "/ { print $2; exit }' src-tauri/Cargo.toml)
+          TAURI_VERSION=$(node -p "require('./src-tauri/tauri.conf.json').version")
+
+          test "$APP_VERSION" = "$CARGO_VERSION"
+          test "$APP_VERSION" = "$TAURI_VERSION"
+
+          if [[ "${GITHUB_REF:-}" == refs/tags/v* ]]; then
+            TAG_VERSION="${GITHUB_REF_NAME#v}"
+            test "$TAG_VERSION" = "$APP_VERSION"
+          fi
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -59,6 +72,8 @@ jobs:
       - run: npm ci
       - name: Generate icons
         run: npx @tauri-apps/cli icon build/icon.png --output src-tauri/icons
+      - name: Clean cached bundles
+        run: rm -rf "src-tauri/target/${{ matrix.target }}/release/bundle"
       - name: Test Rust compilation
         env:
           RUST_BACKTRACE: 1
@@ -81,16 +96,32 @@ jobs:
           KEY_FILE=$(mktemp)
           printf '%s' "$SIGN_KEY" > "$KEY_FILE"
           find "src-tauri/target/${{ matrix.target }}/release/bundle" -type f \( \
-            -name "*.msi" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) \
+            -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) \
             | while read f; do
             TAURI_SIGNING_PRIVATE_KEY_PASSWORD="" npx tauri signer sign --private-key-path "$KEY_FILE" "$f"
           done
           rm -f "$KEY_FILE"
+      - name: Collect release artifacts
+        run: |
+          APP_VERSION=$(node -p "require('./package.json').version")
+          mkdir -p release-artifacts
+          find "src-tauri/target/${{ matrix.target }}/release/bundle" -type f \( \
+            -name "OpenTimeSync_${APP_VERSION}_*.msi" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.msi.sig" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.exe" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.exe.sig" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.dmg" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.dmg.sig" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.deb" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.deb.sig" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.AppImage" -o \
+            -name "OpenTimeSync_${APP_VERSION}_*.AppImage.sig" \) \
+            -exec cp "{}" release-artifacts/ \;
       - name: Upload bundle
         uses: actions/upload-artifact@v4
         with:
           name: opentimesync-${{ matrix.os }}-${{ matrix.target }}
-          path: src-tauri/target/${{ matrix.target }}/release/bundle/
+          path: release-artifacts/
           retention-days: 7
   release:
     if: startsWith(github.ref, 'refs/tags/v')
@@ -108,7 +139,7 @@ jobs:
               echo "Missing updater signature for $f"
               missing=1
             fi
-          done < <(find opentimesync-* -type f \( -name "*.msi" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -print0)
+          done < <(find opentimesync-* -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" \) -print0)
 
           if [ "$missing" -ne 0 ]; then
             echo "Signed updater artifacts are required for tagged releases."
@@ -123,18 +154,23 @@ jobs:
           UPDATER='{"version":"'"$VERSION"'","notes":"Auto-build","pub_date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","platforms":{}}'
           for d in opentimesync-*/; do
             dir="${d%/}"
-            case "$dir" in
-              *windows*) plat="windows-x86_64" ;;
-              *ubuntu*) plat="linux-x86_64" ;;
-              *x86_64-apple*) plat="darwin-x86_64" ;;
-              *aarch64-apple*) plat="darwin-aarch64" ;;
-              *) plat="unknown" ;;
-            esac
-            for f in "$dir"/*/*.msi "$dir"/*/*.dmg "$dir"/*/*.deb "$dir"/*/*.AppImage; do
+            for f in "$dir"/OpenTimeSync_"$VERSION"_*.msi "$dir"/OpenTimeSync_"$VERSION"_*.exe "$dir"/OpenTimeSync_"$VERSION"_*.dmg "$dir"/OpenTimeSync_"$VERSION"_*.deb "$dir"/OpenTimeSync_"$VERSION"_*.AppImage; do
               [ -f "$f" ] || continue
               bf=$(basename "$f")
-              sigfile="$(dirname "$f")/${bf}.sig"
+              sigfile="$dir/${bf}.sig"
               sig=$(cat "$sigfile" 2>/dev/null || echo "")
+              case "$bf" in
+                *.msi) plat="windows-x86_64-msi" ;;
+                *.exe) plat="windows-x86_64-nsis" ;;
+                *.dmg)
+                  case "$dir" in
+                    *aarch64-apple*) plat="darwin-aarch64" ;;
+                    *) plat="darwin-x86_64" ;;
+                  esac
+                  ;;
+                *.deb|*.AppImage) plat="linux-x86_64" ;;
+                *) plat="unknown" ;;
+              esac
               UPDATER=$(echo "$UPDATER" | jq \
                 --arg url "$BASE/$bf" \
                 --arg sig "$sig" \
@@ -147,12 +183,13 @@ jobs:
           cat updater.json
       - name: Create Release and Upload
         run: |
+          VERSION="${GITHUB_REF_NAME#v}"
           gh release create "${{ github.ref_name }}" \
             --title "OpenTimeSync ${{ github.ref_name }}" \
             --generate-notes --repo ${{ github.repository }} || true
           for dir in opentimesync-*/; do
-            find "$dir" -type f \( -name "*.deb" -o -name "*.AppImage" -o -name "*.msi" \
-              -o -name "*.dmg" -o -name "*.tar.gz" -o -name "*.zip" \) -exec \
+            find "$dir" -type f \( -name "OpenTimeSync_${VERSION}_*.deb" -o -name "OpenTimeSync_${VERSION}_*.AppImage" -o -name "OpenTimeSync_${VERSION}_*.msi" -o -name "OpenTimeSync_${VERSION}_*.exe" \
+              -o -name "OpenTimeSync_${VERSION}_*.dmg" -o -name "OpenTimeSync_${VERSION}_*.tar.gz" -o -name "OpenTimeSync_${VERSION}_*.zip" \) -exec \
               gh release upload "${{ github.ref_name }}" {} --clobber --repo ${{ github.repository }} \; || true
           done
           gh release upload "${{ github.ref_name }}" updater.json --clobber --repo ${{ github.repository }} || true
