@@ -482,9 +482,14 @@ function setupTitlebar() {
     document.getElementById('btnMaximize').onclick = () => invoke('maximize_window');
     document.getElementById('btnClose').onclick = () => invoke('close_window');
     const dragRegion = document.getElementById('titlebarDragRegion');
-    dragRegion?.addEventListener('dblclick', (e) => {
+    dragRegion?.addEventListener('mousedown', (e) => {
+      if (e.buttons !== 1) return;
       if (e.target.closest('.titlebar-controls, .tb-btn, .settings-panel')) return;
-      invoke('maximize_window');
+      if (e.detail === 2) {
+        invoke('maximize_window');
+      } else {
+        invoke('start_drag');
+      }
     });
   } else {
     document.querySelector('.titlebar')?.remove();
