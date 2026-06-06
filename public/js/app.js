@@ -312,7 +312,10 @@ async function doCheckUpdate() {
       st.textContent = '新版本 v' + result.version + ' 可用，点击打开下载';
       st.className = 'update-status ready';
       btn.textContent = '打开下载页面';
-      btn.onclick = () => invokeTauri('plugin:opener|open_url', { url: 'https://github.com/Qiguiqiang/OpenTimeSync/releases/latest' });
+      btn.onclick = () => {
+        try { window.open('https://github.com/Qiguiqiang/OpenTimeSync/releases/latest'); }
+        catch (e) { st.textContent = '无法打开浏览器：' + e.message; st.className = 'update-status error'; }
+      };
     } else {
       updateAvailable = null;
       st.textContent = '已是最新版本';
@@ -399,14 +402,17 @@ function setupTitlebar() {
     document.getElementById('btnMaximize').onclick = () => invoke('maximize_window');
     document.getElementById('btnClose').onclick = () => invoke('close_window');
     const tb = document.querySelector('.titlebar');
+    let dragTimer = null;
     tb.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (e.target.closest('.titlebar-controls, .tb-btn')) return;
-      if (e.detail === 2) {
+      if (dragTimer) {
+        clearTimeout(dragTimer); dragTimer = null;
         invoke('maximize_window');
       } else {
-        invoke('start_drag');
+        dragTimer = setTimeout(() => { dragTimer = null; invoke('start_drag'); }, 250);
       }
+    });
     });
   } else {
     document.querySelector('.titlebar')?.remove();

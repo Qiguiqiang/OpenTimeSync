@@ -2450,7 +2450,7 @@ dependencies = [
 
 [[package]]
 name = "opentimesync"
-version = "2.0.67"
+version = "2.0.68"
 dependencies = [
  "serde",
  "serde_json",
