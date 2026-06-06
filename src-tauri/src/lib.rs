@@ -21,6 +21,7 @@ struct NtpTimePayload {
     server_time: u64,
     ntp_offset: f64,
     ntp_rtt: i64,
+    has_fresh_data: bool,
     ntp_server: String,
     server_latencies: HashMap<String, ServerLatency>,
 }
@@ -506,6 +507,7 @@ fn run_ntp_loop(app_handle: tauri::AppHandle, app_state: Arc<AppState>) {
     std::thread::spawn(move || {
         loop {
             let active_host = app_state.active_server.lock().unwrap().host.clone();
+            let previous_payload = app_state.last_payload.lock().unwrap().clone();
 
             let mut server_latencies = HashMap::new();
             let mut active_samples: Vec<NtpSample> = Vec::new();
@@ -536,11 +538,12 @@ fn run_ntp_loop(app_handle: tauri::AppHandle, app_state: Arc<AppState>) {
                 }
             }
 
-            let ntp_offset = if !active_samples.is_empty() {
+            let has_fresh_data = !active_samples.is_empty();
+            let ntp_offset = if has_fresh_data {
                 let filtered = remove_outliers(&active_samples, 0.1);
                 weighted_average(&filtered)
             } else {
-                0.0
+                previous_payload.as_ref().map(|p| p.ntp_offset).unwrap_or(0.0)
             };
 
             let ntp_rtt = if active_samples.is_empty() {
@@ -562,6 +565,7 @@ fn run_ntp_loop(app_handle: tauri::AppHandle, app_state: Arc<AppState>) {
                 } else {
                     -1
                 },
+                has_fresh_data,
                 ntp_server: active_host,
                 server_latencies,
             };
@@ -570,7 +574,7 @@ fn run_ntp_loop(app_handle: tauri::AppHandle, app_state: Arc<AppState>) {
             *app_state.last_payload.lock().unwrap() = Some(payload.clone());
             *app_state.cycle_count.lock().unwrap() = cycle + 1;
 
-            if *app_state.auto_sync.lock().unwrap() {
+            if *app_state.auto_sync.lock().unwrap() && payload.has_fresh_data {
                 let last_sync = *app_state.last_sync_cycle.lock().unwrap();
                 let interval_secs = *app_state.sync_interval_secs.lock().unwrap();
                 let cooldown = (interval_secs + 1) / 2;

@@ -60,6 +60,7 @@ const State = {
   samples: [],
   maxSamples: 20,
   isSynced: false,
+  hasFreshData: false,
   syncBase: 0,
   perfBase: 0,
   offsetStd: 0,
@@ -97,16 +98,21 @@ function getPrecisionClass(tier) {
 function handleTime(msg) {
   if (!msg || typeof msg.ntp_offset === 'undefined') return;
   const offset = msg.ntp_offset;
+  State.hasFreshData = msg.has_fresh_data !== false;
 
-  State.samples.push(offset);
-  if (State.samples.length > State.maxSamples) State.samples.shift();
+  if (State.hasFreshData) {
+    State.samples.push(offset);
+    if (State.samples.length > State.maxSamples) State.samples.shift();
+  }
 
   State.ntpOffset = offset;
   if (msg.ntp_server) State.ntpServer = msg.ntp_server;
   if (msg.ntp_rtt !== undefined) State.ntpRtt = msg.ntp_rtt;
   if (msg.server_latencies) State.serverLatencies = msg.server_latencies;
 
-  calculateOffset();
+  if (State.hasFreshData) {
+    calculateOffset();
+  }
   updateUI();
 }
 
@@ -128,19 +134,36 @@ function calculateOffset() {
 function getSyncTime() { return State.syncBase + (performance.now() - State.perfBase); }
 
 function updateUI() {
-  const offsetText = State.ntpOffset.toFixed(2);
+  const hasOffsetData = State.isSynced || State.hasFreshData;
+  const offsetText = hasOffsetData && Number.isFinite(State.ntpOffset)
+    ? State.ntpOffset.toFixed(2)
+    : '--';
   DOM.offsetDisplay.textContent = `偏差: ${offsetText}ms`;
 
-  const tier = getPrecisionTier();
-  DOM.precisionTier.textContent = tier;
-  DOM.precisionTier.className = 'stat-value ' + getPrecisionClass(tier);
-  DOM.precisionError.textContent = `±${State.offsetStd.toFixed(2)}ms`;
+  if (State.isSynced) {
+    const tier = getPrecisionTier();
+    DOM.precisionTier.textContent = tier;
+    DOM.precisionTier.className = 'stat-value ' + getPrecisionClass(tier);
+    DOM.precisionError.textContent = `±${State.offsetStd.toFixed(2)}ms`;
+  } else {
+    DOM.precisionTier.textContent = '--';
+    DOM.precisionTier.className = 'stat-value';
+    DOM.precisionError.textContent = '--';
+  }
   DOM.sampleCount.textContent = State.samples.length;
 
   DOM.offsetValue.textContent = offsetText;
-  DOM.offsetValue.className = 'stat-value ' + cls(Math.abs(State.ntpOffset), 5, 20);
+  DOM.offsetValue.className = hasOffsetData
+    ? 'stat-value ' + cls(Math.abs(State.ntpOffset), 5, 20)
+    : 'stat-value';
 
-  setStatus('synced', `已同步 偏移 ${State.ntpOffset.toFixed(1)}ms 精度 ±${State.offsetStd.toFixed(1)}ms`);
+  if (State.hasFreshData && State.isSynced) {
+    setStatus('synced', `已同步 偏移 ${State.ntpOffset.toFixed(1)}ms 精度 ±${State.offsetStd.toFixed(1)}ms`);
+  } else if (State.isSynced) {
+    setStatus('connecting', `网络无数据，沿用上次偏移 ${State.ntpOffset.toFixed(1)}ms`);
+  } else {
+    setStatus('connecting', '等待NTP数据...');
+  }
 
   const activeNtp = NTP_SERVERS.find(s => s.host === State.ntpServer);
   const ntpLabel = activeNtp ? activeNtp.name : State.ntpServer;
