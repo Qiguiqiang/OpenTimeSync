@@ -40,6 +40,13 @@ struct AppState {
     last_sync_cycle: Mutex<u64>,
     sync_interval_secs: Mutex<u64>,
     update_status: Mutex<UpdateStatusPayload>,
+    downloaded_update: Mutex<Option<DownloadedUpdate>>,
+}
+
+#[derive(Clone)]
+struct DownloadedUpdate {
+    update: tauri_plugin_updater::Update,
+    bytes: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -310,6 +317,7 @@ async fn check_for_update(
         None,
         None,
     );
+    *app_state.downloaded_update.lock().unwrap() = None;
 
     let updater = app
         .updater_builder()
@@ -340,7 +348,7 @@ async fn check_for_update(
 }
 
 #[tauri::command]
-fn install_available_update(
+fn download_available_update(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
@@ -353,6 +361,8 @@ fn install_available_update(
             return Err("更新任务正在进行中".to_string());
         }
     }
+
+    *app_state.downloaded_update.lock().unwrap() = None;
 
     set_update_status(
         &app_state,
@@ -391,8 +401,8 @@ fn install_available_update(
                 None,
             );
 
-            update
-                .download_and_install(
+            let bytes = update
+                .download(
                     |chunk_length, content_length| {
                         downloaded_bytes += chunk_length as u64;
                         let message = match content_length {
@@ -413,29 +423,24 @@ fn install_available_update(
                             content_length,
                         );
                     },
-                    || {
-                        set_update_status(
-                            &app_state,
-                            "installing",
-                            current_version.clone(),
-                            Some(version.clone()),
-                            format!("下载完成，正在安装 v{}", version),
-                            None,
-                            None,
-                        );
-                    },
+                    || {},
                 )
                 .await
                 .map_err(format_update_error)?;
 
+            *app_state.downloaded_update.lock().unwrap() = Some(DownloadedUpdate {
+                update,
+                bytes,
+            });
+
             set_update_status(
                 &app_state,
-                "installing",
+                "downloaded",
                 current_version.clone(),
                 Some(version.clone()),
-                format!("安装程序已启动，正在应用 v{}", version),
-                None,
-                None,
+                format!("v{} 下载完成，点击安装并重启", version),
+                Some(downloaded_bytes),
+                Some(downloaded_bytes),
             );
 
             Ok(())
@@ -449,6 +454,45 @@ fn install_available_update(
                 current_version,
                 None,
                 format!("更新失败：{}", err),
+                None,
+                None,
+            );
+        }
+    });
+
+    Ok(())
+}
+
+#[tauri::command]
+fn install_downloaded_update(
+    state: tauri::State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let app_state = state.inner().clone();
+    let current_version = app_state.update_status.lock().unwrap().current_version.clone();
+    let downloaded = app_state.downloaded_update.lock().unwrap().take();
+
+    let downloaded = downloaded.ok_or_else(|| "尚未下载可安装的更新".to_string())?;
+    let version = downloaded.update.version.clone();
+
+    set_update_status(
+        &app_state,
+        "installing",
+        current_version.clone(),
+        Some(version.clone()),
+        format!("正在启动安装器，应用将自动关闭并在完成后重启到 v{}", version),
+        None,
+        None,
+    );
+
+    tauri::async_runtime::spawn(async move {
+        std::thread::sleep(Duration::from_millis(250));
+        if let Err(err) = downloaded.update.install(&downloaded.bytes) {
+            set_update_status(
+                &app_state,
+                "error",
+                current_version,
+                Some(version),
+                format!("启动安装器失败：{}", format_update_error(err)),
                 None,
                 None,
             );
@@ -565,6 +609,7 @@ pub fn run() {
             downloaded_bytes: None,
             total_bytes: None,
         }),
+        downloaded_update: Mutex::new(None),
     });
 
     tauri::Builder::default()
@@ -587,7 +632,8 @@ pub fn run() {
             start_drag,
             get_update_status,
             check_for_update,
-            install_available_update,
+            download_available_update,
+            install_downloaded_update,
         ])
         .setup(move |app| {
             run_ntp_loop(app.handle().clone(), app_state.clone());

@@ -297,7 +297,7 @@ if (window.__TAURI_INTERNALS__) {
 }
 
 let updatePollTimer = 0;
-let updateAvailable = false;
+let currentUpdatePhase = 'idle';
 
 function stopUpdatePolling() {
   if (updatePollTimer) {
@@ -309,6 +309,7 @@ function stopUpdatePolling() {
 function updateStatusClass(phase) {
   if (phase === 'checking') return 'update-status checking';
   if (phase === 'available') return 'update-status ready';
+  if (phase === 'downloaded') return 'update-status ready';
   if (phase === 'downloading' || phase === 'installing') return 'update-status downloading';
   if (phase === 'error') return 'update-status error';
   return 'update-status';
@@ -319,8 +320,7 @@ function renderUpdateStatus(status) {
 
   DOM.updateStatus.textContent = status.message || '';
   DOM.updateStatus.className = updateStatusClass(status.phase);
-
-  updateAvailable = status.phase === 'available';
+  currentUpdatePhase = status.phase || 'idle';
 
   if (status.phase === 'checking') {
     DOM.btnCheckUpdate.disabled = true;
@@ -330,7 +330,7 @@ function renderUpdateStatus(status) {
 
   if (status.phase === 'available') {
     DOM.btnCheckUpdate.disabled = false;
-    DOM.btnCheckUpdate.textContent = '下载并安装';
+    DOM.btnCheckUpdate.textContent = '下载更新';
     return;
   }
 
@@ -340,9 +340,15 @@ function renderUpdateStatus(status) {
     return;
   }
 
+  if (status.phase === 'downloaded') {
+    DOM.btnCheckUpdate.disabled = false;
+    DOM.btnCheckUpdate.textContent = '安装并重启';
+    return;
+  }
+
   if (status.phase === 'installing') {
     DOM.btnCheckUpdate.disabled = true;
-    DOM.btnCheckUpdate.textContent = '安装中...';
+    DOM.btnCheckUpdate.textContent = '即将重启...';
     DOM.btnCheckUpdate.classList.add('installing');
     return;
   }
@@ -389,24 +395,44 @@ async function doCheckUpdate() {
 }
 
 async function startInstallUpdate() {
-  DOM.updateStatus.textContent = '正在准备下载安装...';
+  DOM.updateStatus.textContent = '正在准备安装，应用将自动关闭并在完成后重启...';
+  DOM.updateStatus.className = 'update-status downloading';
+  DOM.btnCheckUpdate.disabled = true;
+  DOM.btnCheckUpdate.textContent = '即将重启...';
+
+  try {
+    await new Promise(resolve => setTimeout(resolve, 250));
+    await invokeTauri('install_downloaded_update');
+    startUpdatePolling();
+  } catch (e) {
+    renderUpdateStatus({
+      phase: 'error',
+      message: '启动安装失败：' + (e.message || e)
+    });
+  }
+}
+
+async function startDownloadUpdate() {
+  DOM.updateStatus.textContent = '正在准备下载更新...';
   DOM.updateStatus.className = 'update-status downloading';
   DOM.btnCheckUpdate.disabled = true;
   DOM.btnCheckUpdate.textContent = '下载中...';
 
   try {
-    await invokeTauri('install_available_update');
+    await invokeTauri('download_available_update');
     startUpdatePolling();
   } catch (e) {
     renderUpdateStatus({
       phase: 'error',
-      message: '启动更新失败：' + (e.message || e)
+      message: '启动下载失败：' + (e.message || e)
     });
   }
 }
 
 DOM.btnCheckUpdate.addEventListener('click', () => {
-  if (updateAvailable) {
+  if (currentUpdatePhase === 'available') {
+    startDownloadUpdate();
+  } else if (currentUpdatePhase === 'downloaded') {
     startInstallUpdate();
   } else {
     doCheckUpdate();
@@ -487,6 +513,10 @@ function setupTitlebar() {
     dragRegion?.addEventListener('mousedown', (e) => {
       if (e.button !== 0) return;
       if (e.target.closest('.titlebar-controls, .tb-btn, .settings-panel')) return;
+      if (e.detail > 1) {
+        pendingDrag = null;
+        return;
+      }
       pendingDrag = { x: e.clientX, y: e.clientY };
     });
 
