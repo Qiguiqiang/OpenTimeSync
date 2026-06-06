@@ -413,7 +413,6 @@ function setupTitlebar() {
         dragTimer = setTimeout(() => { dragTimer = null; invoke('start_drag'); }, 250);
       }
     });
-    });
   } else {
     document.querySelector('.titlebar')?.remove();
   }
