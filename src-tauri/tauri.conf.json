@@ -1,6 +1,6 @@
 {
   "productName": "OpenTimeSync",
-  "version": "2.0.77",
+  "version": "2.1.2",
   "identifier": "com.opentimesync.desktop",
   "build": {
     "frontendDist": "../public",
@@ -10,14 +10,32 @@
   "app": {
     "windows": [
       {
+        "label": "main",
         "title": "OpenTimeSync",
         "width": 800,
         "height": 500,
         "minWidth": 600,
         "minHeight": 400,
         "decorations": false,
+        "transparent": true,
         "center": true,
+        "visible": false,
         "devtools": true
+      },
+      {
+        "label": "splashscreen",
+        "title": "OpenTimeSync Startup",
+        "url": "splash.html",
+        "create": false,
+        "width": 920,
+        "height": 560,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "center": true,
+        "skipTaskbar": true,
+        "alwaysOnTop": true,
+        "shadow": false
       }
     ],
     "security": {

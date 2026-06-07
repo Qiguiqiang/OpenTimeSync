@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>OpenTimeSync Startup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body class="splash-only">
+  <div class="boot-overlay splash-visible" id="bootOverlay" aria-hidden="true">
+    <div class="boot-ambient"></div>
+    <div class="boot-wordmark">
+      <span class="boot-line boot-brand">OpenTimeSync</span>
+    </div>
+    <div class="boot-panel">
+      <div class="boot-kicker">SYSTEM STARTUP</div>
+      <div class="boot-status-text" id="bootStatusText">正在初始化同步引擎...</div>
+      <div class="boot-progress">
+        <div class="boot-progress-bar" id="bootProgressBar"></div>
+      </div>
+      <div class="boot-caption" id="bootCaption">OPEN TIME SYNC 正在建立首轮高精度时间基线</div>
+    </div>
+  </div>
+
+  <script src="js/splash.js"></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 {
   "identifier": "default",
   "description": "Default permissions for OpenTimeSync",
-  "windows": ["main"],
+  "windows": ["main", "widget", "splashscreen"],
   "permissions": [
     "core:default",
     "core:window:default",

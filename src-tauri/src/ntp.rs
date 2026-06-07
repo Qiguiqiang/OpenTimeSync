@@ -1,15 +1,18 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::net::UdpSocket;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-#[derive(Debug, Clone, Serialize)]
+const MIN_VALID_NTP_MS: f64 = 946_684_800_000.0;
+const MAX_VALID_NTP_MS: f64 = 4_102_444_800_000.0;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NtpSample {
     pub server: String,
     pub offset: f64,
     pub rtt: f64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServerLatency {
     pub rtt: i64,
     pub status: String,
@@ -20,15 +23,16 @@ pub fn query_ntp(server: &str) -> Result<NtpSample, String> {
         .map_err(|e| format!("bind error: {}", e))?;
     socket.set_read_timeout(Some(Duration::from_millis(2000)))
         .map_err(|e| format!("set timeout error: {}", e))?;
+    socket
+        .connect(format!("{}:123", server))
+        .map_err(|e| format!("connect error: {}", e))?;
 
     let mut packet = [0u8; 48];
     packet[0] = 0x1b;
 
     let t1 = wall_time_ms();
 
-    socket
-        .send_to(&packet, format!("{}:123", server))
-        .map_err(|e| format!("send error: {}", e))?;
+    socket.send(&packet).map_err(|e| format!("send error: {}", e))?;
 
     let mut buf = [0u8; 48];
     let n = socket.recv(&mut buf).map_err(|e| format!("recv error: {}", e))?;
@@ -41,8 +45,11 @@ pub fn query_ntp(server: &str) -> Result<NtpSample, String> {
     let t2 = parse_ntp_timestamp(&buf, 32);
     let t3 = parse_ntp_timestamp(&buf, 40);
 
-    let now = t4 as f64;
-    if t2 < 946684800000.0 || t2 > now + 5000.0 || t3 < 946684800000.0 || t3 > now + 5000.0 {
+    if t2 < MIN_VALID_NTP_MS
+        || t2 > MAX_VALID_NTP_MS
+        || t3 < MIN_VALID_NTP_MS
+        || t3 > MAX_VALID_NTP_MS
+    {
         return Err(format!("invalid ntp timestamp from {}", server));
     }
 

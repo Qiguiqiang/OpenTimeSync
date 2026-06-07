@@ -29,13 +29,46 @@
         <input type="checkbox" id="chkAutoSync">
         <span>自动同步NTP</span>
       </label>
-      <div class="sync-interval-row" data-tooltip="自动同步NTP开启后，每隔多少秒主动向NTP服务器刷新一次数据。范围为5到3600秒。">
+      <div class="sync-interval-row" data-tooltip="自动同步NTP开启后，每隔多少秒主动向NTP服务器刷新一次数据。范围为2到3600秒。">
         <span>NTP间隔</span>
-        <input type="number" id="syncInterval" min="5" max="3600" value="30">
+        <input type="number" id="syncInterval" min="2" max="3600" value="5">
         <span>秒</span>
       </div>
       <hr class="sync-divider">
       <div class="sync-status" id="syncStatus"></div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-title">同步模式</div>
+      <div class="field-row" data-tooltip="本机NTP表示直接使用当前设备访问NTP服务器；局域网主机表示本机先对NTP同步，再把时间广播给局域网从机；局域网从机表示跟随主机时间。">
+        <span>同步模式</span>
+        <select class="settings-select" id="syncMode">
+          <option value="localNtp">本机NTP</option>
+          <option value="master">局域网主机</option>
+          <option value="slave">局域网从机</option>
+        </select>
+      </div>
+      <div class="field-row" id="masterHostRow" data-tooltip="局域网从机模式下，填写主机地址和端口，例如 192.168.1.10:36363。">
+        <span>主机地址</span>
+        <input class="settings-input" id="masterHost" type="text" placeholder="127.0.0.1:36363">
+      </div>
+      <div class="field-row" data-tooltip="主机与从机使用同一配对码即可建立局域网时间同步关系。主机会生成默认配对码，你也可以自行修改。">
+        <span>配对码</span>
+        <input class="settings-input" id="pairCode" type="text" placeholder="000000">
+      </div>
+      <div class="mode-hint" id="modeHint">本机直接通过NTP对时，不经过局域网主从转发。</div>
+    </div>
+    <div class="settings-group">
+      <div class="settings-title">托盘与挂件</div>
+      <label class="sync-toggle" data-tooltip="开启后，主窗口最小化或关闭时会先收纳到系统托盘，并在系统边缘显示同步时间挂件。挂件不会再强制压在其他软件界面上方。">
+        <input type="checkbox" id="chkWidgetEnabled">
+        <span>收纳到托盘并显示挂件</span>
+      </label>
+      <div class="sync-interval-row widget-scale-row" data-tooltip="实时调整悬浮挂件大小。点击挂件右上角 X 会关闭该功能并记住设置。">
+        <span>挂件大小</span>
+        <input type="range" id="widgetScale" min="80" max="220" value="100" step="5">
+        <span class="widget-scale-value" id="widgetScaleValue">100%</span>
+      </div>
+      <div class="sync-status">双击挂件可恢复主窗口，悬停显示关闭按钮，位置和大小会自动记住。</div>
     </div>
     <div class="settings-group">
       <div class="settings-title">版本与更新</div>
@@ -49,8 +82,38 @@
   </div>
   <div class="scanlines"></div>
   <div class="grid-overlay"></div>
+  <div class="update-modal" id="updateModal">
+    <div class="update-modal-card">
+      <div class="settings-title">发现新版本</div>
+      <div class="version-row">
+        <span>当前版本：</span>
+        <span class="version-num" id="updateCurrentVersion">--</span>
+      </div>
+      <div class="version-row">
+        <span>最新版本：</span>
+        <span class="version-num" id="updateLatestVersion">--</span>
+      </div>
+      <pre class="update-notes" id="updateNotes">--</pre>
+      <div class="update-progress">
+        <div class="update-progress-bar" id="updateProgressBar"></div>
+      </div>
+      <div class="update-progress-text" id="updateProgressText">等待开始</div>
+      <div class="update-actions">
+        <button class="sync-btn update-secondary" id="btnUpdateLater">稍后</button>
+        <button class="sync-btn" id="btnUpdateNow">下载更新</button>
+      </div>
+    </div>
+  </div>
 
   <div class="container">
+    <div class="widget-shell" id="widgetShell" data-tooltip="未同步">
+      <button class="widget-close" id="widgetClose" type="button" aria-label="关闭挂件">×</button>
+      <div class="widget-top">
+        <span class="widget-badge" id="widgetBadge">未同步</span>
+      </div>
+      <div class="widget-time" id="widgetTime">--:--:--</div>
+    </div>
+
     <header class="header">
       <div class="status" id="statusBar">
         <span class="status-dot" id="statusDot"></span>

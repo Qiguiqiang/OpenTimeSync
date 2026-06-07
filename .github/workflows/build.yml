@@ -130,6 +130,10 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
       - uses: actions/download-artifact@v4
       - name: Verify updater signatures
         run: |
@@ -151,7 +155,14 @@ jobs:
           TAG="$GITHUB_REF_NAME"
           REPO="Qiguiqiang/OpenTimeSync"
           BASE="https://github.com/$REPO/releases/download/$TAG"
-          UPDATER='{"version":"'"$VERSION"'","notes":"Auto-build","pub_date":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","platforms":{}}'
+          NOTES="$(node scripts/extract-changelog.mjs "$VERSION")"
+          PUB_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf '%s\n' "$NOTES" > release-notes.md
+          UPDATER=$(jq -n \
+            --arg version "$VERSION" \
+            --arg notes "$NOTES" \
+            --arg pub_date "$PUB_DATE" \
+            '{version:$version,notes:$notes,pub_date:$pub_date,platforms:{}}')
           for d in opentimesync-*/; do
             dir="${d%/}"
             for f in "$dir"/OpenTimeSync_"$VERSION"_*.msi "$dir"/OpenTimeSync_"$VERSION"_*.exe "$dir"/OpenTimeSync_"$VERSION"_*.dmg "$dir"/OpenTimeSync_"$VERSION"_*.deb "$dir"/OpenTimeSync_"$VERSION"_*.AppImage; do
@@ -184,9 +195,15 @@ jobs:
       - name: Create Release and Upload
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          gh release create "${{ github.ref_name }}" \
-            --title "OpenTimeSync ${{ github.ref_name }}" \
-            --generate-notes --repo ${{ github.repository }} || true
+          if gh release view "${{ github.ref_name }}" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            gh release edit "${{ github.ref_name }}" \
+              --title "OpenTimeSync ${{ github.ref_name }}" \
+              --notes-file release-notes.md --repo ${{ github.repository }}
+          else
+            gh release create "${{ github.ref_name }}" \
+              --title "OpenTimeSync ${{ github.ref_name }}" \
+              --notes-file release-notes.md --repo ${{ github.repository }}
+          fi
           for dir in opentimesync-*/; do
             find "$dir" -type f \( -name "OpenTimeSync_${VERSION}_*.deb" -o -name "OpenTimeSync_${VERSION}_*.AppImage" -o -name "OpenTimeSync_${VERSION}_*.msi" -o -name "OpenTimeSync_${VERSION}_*.exe" \
               -o -name "OpenTimeSync_${VERSION}_*.dmg" -o -name "OpenTimeSync_${VERSION}_*.tar.gz" -o -name "OpenTimeSync_${VERSION}_*.zip" \) -exec \
