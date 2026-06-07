@@ -42,7 +42,6 @@ const WIDGET_DEFAULT_RIGHT_MARGIN: i32 = 28;
 const WIDGET_DEFAULT_BOTTOM_MARGIN: i32 = 16;
 const WIDGET_MIN_SCALE: u32 = 80;
 const WIDGET_MAX_SCALE: u32 = 220;
-const WIDGET_POSITION_SAVE_DEBOUNCE_MS: u64 = 180;
 
 fn default_widget_scale() -> u32 {
     100
@@ -980,68 +979,16 @@ fn apply_widget_size(widget: &WebviewWindow, state: &Arc<AppState>) -> Result<()
         .map_err(|e| e.to_string())
 }
 
-fn monitor_contains_point(monitor: &tauri::Monitor, x: i32, y: i32) -> bool {
-    let position = monitor.position();
-    let size = monitor.size();
-    let right = position.x + size.width as i32;
-    let bottom = position.y + size.height as i32;
-    x >= position.x && x < right && y >= position.y && y < bottom
-}
-
-fn resolve_widget_monitor(
-    app: &AppHandle,
-    widget: Option<&WebviewWindow>,
-    state: &Arc<AppState>,
-) -> Result<tauri::Monitor, String> {
-    let monitors = app.available_monitors().map_err(|e| e.to_string())?;
-    let pick_for_point = |x: i32, y: i32| {
-        monitors
-            .iter()
-            .find(|monitor| monitor_contains_point(monitor, x, y))
-            .cloned()
-    };
-
-    if let Some((x, y)) = *state.widget_position.lock().unwrap() {
-        if let Some(monitor) = pick_for_point(x, y) {
-            return Ok(monitor);
-        }
-    }
-
-    if let Some(widget) = widget {
-        if let Ok(position) = widget.outer_position() {
-            if let Some(monitor) = pick_for_point(position.x, position.y) {
-                return Ok(monitor);
-            }
-        }
-
-        if let Ok(Some(monitor)) = widget.current_monitor() {
-            return Ok(monitor);
-        }
-    }
-
-    if let Some(main) = app.get_webview_window(MAIN_LABEL) {
-        if let Ok(position) = main.outer_position() {
-            if let Some(monitor) = pick_for_point(position.x, position.y) {
-                return Ok(monitor);
-            }
-        }
-
-        if let Ok(Some(monitor)) = main.current_monitor() {
-            return Ok(monitor);
-        }
-    }
-
-    app.primary_monitor()
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| "无法获取显示器".to_string())
-}
-
 fn position_widget_window(
     app: &AppHandle,
     widget: &WebviewWindow,
     state: &Arc<AppState>,
 ) -> Result<(), String> {
-    let monitor = resolve_widget_monitor(app, Some(widget), state)?;
+    let monitor = widget
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or_else(|| app.primary_monitor().ok().flatten())
+        .ok_or_else(|| "无法获取显示器".to_string())?;
     let work = monitor.work_area();
     let (width, height) = widget_dimensions(state);
     let work_right = work.position.x + work.size.width as i32;
@@ -1129,32 +1076,6 @@ fn schedule_widget_visibility_sync(app: AppHandle, state: Arc<AppState>) {
         std::thread::sleep(Duration::from_millis(180));
         sync_shell_surfaces(&app, &state);
     });
-}
-
-fn persist_widget_window_position(state: &Arc<AppState>, x: i32, y: i32) {
-    *state.widget_position.lock().unwrap() = Some((x, y));
-    persist_config_best_effort(state);
-}
-
-fn attach_widget_window_listener(app: &AppHandle, state: Arc<AppState>) {
-    if let Some(widget_window) = app.get_webview_window(WIDGET_LABEL) {
-        let app_handle = app.clone();
-        widget_window.on_window_event(move |event| match event {
-            WindowEvent::Moved(position) => {
-                let x = position.x;
-                let y = position.y;
-                let state = state.clone();
-                std::thread::spawn(move || {
-                    std::thread::sleep(Duration::from_millis(WIDGET_POSITION_SAVE_DEBOUNCE_MS));
-                    persist_widget_window_position(&state, x, y);
-                });
-            }
-            WindowEvent::Focused(true) => {
-                schedule_widget_visibility_sync(app_handle.clone(), state.clone());
-            }
-            _ => {}
-        });
-    }
 }
 
 fn attach_main_window_listener(app: &AppHandle, state: Arc<AppState>) {
@@ -1995,7 +1916,6 @@ pub fn run() {
             sync_startup_ui_state(&app.handle(), &app_state);
             schedule_startup_failsafe(app.handle().clone(), app_state.clone());
             attach_main_window_listener(&app.handle(), app_state.clone());
-            attach_widget_window_listener(&app.handle(), app_state.clone());
             start_master_listener(app_state.clone());
             run_ntp_loop(app.handle().clone(), app_state.clone());
             Ok(())
