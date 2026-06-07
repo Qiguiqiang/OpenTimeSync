@@ -12,6 +12,7 @@ All notable changes to OpenTimeSync are documented in this file.
 - Fixed floating widget drag by routing it through a dedicated native widget drag command instead of the main-window drag path.
 - Fixed widget position persistence by saving from widget window move events, so dragged positions survive hide, restore, and restart.
 - Fixed widget close behavior so the `X` button fully disables the widget setting without freezing and the close button remains fully visible inside the widget bounds.
+- Fixed macOS build compatibility by removing unsupported builder transparency calls so both Intel and Apple Silicon DMG pipelines pass in GitHub Actions.
 
 ## [2.1.1] - 2026-06-07
 
