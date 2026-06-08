@@ -2,6 +2,11 @@
 
 All notable changes to OpenTimeSync are documented in this file.
 
+## [2.1.12] - 2026-06-08
+
+### Changed
+- Enlarged the main clock display while keeping comfortable padding inside the time panel so the digits feel prominent without touching the window edges.
+
 ## [2.1.11] - 2026-06-08
 
 ### Changed

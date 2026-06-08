@@ -503,6 +503,7 @@ body.boot-active .grid-overlay {
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  padding: clamp(18px, 3vmin, 36px);
   background: var(--bg-card);
   position: relative;
   overflow: hidden;
@@ -555,7 +556,7 @@ body.boot-active .grid-overlay {
   width: 2ch;
   text-align: center;
   font-family: var(--font-display);
-  font-size: clamp(3rem, min(13.5vmin, calc((100vw - 96px) / 8.4)), 7.5rem);
+  font-size: clamp(5.4rem, min(27vmin, calc((100vw - 112px) / 5.45)), 13.5rem);
   font-weight: 700;
   color: var(--text);
   text-shadow: 0 0 20px rgba(224, 232, 255, 0.15), 0 0 60px rgba(224, 232, 255, 0.05);
@@ -568,7 +569,7 @@ body.boot-active .grid-overlay {
   width: 0.5ch;
   text-align: center;
   font-family: var(--font-display);
-  font-size: clamp(2.4rem, min(11.5vmin, calc((100vw - 96px) / 9.6)), 6.4rem);
+  font-size: clamp(4.4rem, min(23vmin, calc((100vw - 112px) / 6.2)), 11.5rem);
   font-weight: 700;
   color: var(--text);
   text-shadow: 0 0 20px rgba(224, 232, 255, 0.15), 0 0 60px rgba(224, 232, 255, 0.05);
@@ -577,7 +578,7 @@ body.boot-active .grid-overlay {
 
 .time-ms {
   font-family: var(--font-display);
-  font-size: clamp(1.2rem, min(6.5vmin, calc((100vw - 96px) / 15)), 3.8rem);
+  font-size: clamp(2.1rem, min(12vmin, calc((100vw - 112px) / 11.5)), 6.2rem);
   font-weight: 700;
   color: var(--cyan);
   text-shadow: 0 0 15px var(--cyan-dim), 0 0 50px rgba(0, 240, 255, 0.12);
