@@ -159,6 +159,7 @@ struct AppState {
     widget_enabled: Mutex<bool>,
     collapsed_to_tray: Mutex<bool>,
     widget_dismissed: Mutex<bool>,
+    widget_force_visible: Mutex<bool>,
     widget_position: Mutex<Option<(i32, i32)>>,
     widget_scale: Mutex<u32>,
     calibration_stage: Mutex<CalibrationStage>,
@@ -780,35 +781,6 @@ fn sync_tray_state(app: &AppHandle, state: &Arc<AppState>) {
     };
 
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let widget_label = if !*state.widget_enabled.lock().unwrap() {
-            "启用悬浮挂件"
-        } else {
-            let widget_visible = app
-                .get_webview_window(WIDGET_LABEL)
-                .and_then(|window| window.is_visible().ok())
-                .unwrap_or(false);
-            if widget_visible {
-                "隐藏悬浮挂件"
-            } else {
-                "显示悬浮挂件"
-            }
-        };
-        if let Ok(show_item) =
-            MenuItem::with_id(app, TRAY_SHOW_ID, "显示主窗口", true, None::<&str>)
-        {
-            if let Ok(widget_item) =
-                MenuItem::with_id(app, TRAY_WIDGET_ID, widget_label, true, None::<&str>)
-            {
-                if let Ok(quit_item) =
-                    MenuItem::with_id(app, TRAY_EXIT_ID, "退出 OpenTimeSync", true, None::<&str>)
-                {
-                    if let Ok(menu) = Menu::with_items(app, &[&show_item, &widget_item, &quit_item])
-                    {
-                        let _ = tray.set_menu(Some(menu));
-                    }
-                }
-            }
-        }
         let _ = tray.set_visible(should_show);
         let _ = tray.set_tooltip(Some(format_tray_tooltip(state)));
     }
@@ -907,16 +879,13 @@ fn hide_main_window_to_tray(app: &AppHandle, state: &Arc<AppState>) {
     if let Some(main) = app.get_webview_window(MAIN_LABEL) {
         let _ = main.hide();
     }
-    if *state.widget_enabled.lock().unwrap() {
-        *state.widget_dismissed.lock().unwrap() = false;
-        show_widget_window(app, state);
-    }
     sync_shell_surfaces(app, state);
 }
 
 fn restore_main_window_internal(app: &AppHandle, state: &Arc<AppState>) -> Result<(), String> {
     complete_startup_ui(app, state);
     *state.collapsed_to_tray.lock().unwrap() = false;
+    *state.widget_force_visible.lock().unwrap() = false;
     let main = app
         .get_webview_window(MAIN_LABEL)
         .ok_or_else(|| "主窗口不存在".to_string())?;
@@ -979,7 +948,7 @@ fn ensure_tray_icon(app: &AppHandle, state: &Arc<AppState>) -> Result<(), String
     let show_item = MenuItem::with_id(app, TRAY_SHOW_ID, "显示主窗口", true, None::<&str>)
         .map_err(|e| e.to_string())?;
     let widget_item =
-        MenuItem::with_id(app, TRAY_WIDGET_ID, "启用悬浮挂件", true, None::<&str>)
+        MenuItem::with_id(app, TRAY_WIDGET_ID, "显示或隐藏悬浮挂件", true, None::<&str>)
             .map_err(|e| e.to_string())?;
     let quit_item = MenuItem::with_id(app, TRAY_EXIT_ID, "退出 OpenTimeSync", true, None::<&str>)
         .map_err(|e| e.to_string())?;
@@ -1092,18 +1061,20 @@ fn sync_widget_visibility(app: &AppHandle, state: &Arc<AppState>) {
     if !enabled {
         *state.collapsed_to_tray.lock().unwrap() = false;
         *state.widget_dismissed.lock().unwrap() = false;
+        *state.widget_force_visible.lock().unwrap() = false;
         hide_widget_window(app, state);
         return;
     }
 
     let collapsed_to_tray = *state.collapsed_to_tray.lock().unwrap();
     let dismissed = *state.widget_dismissed.lock().unwrap();
+    let forced_visible = *state.widget_force_visible.lock().unwrap();
     let is_minimized = app
         .get_webview_window(MAIN_LABEL)
         .and_then(|window| window.is_minimized().ok())
         .unwrap_or(false);
 
-    if (collapsed_to_tray || is_minimized) && !dismissed {
+    if (collapsed_to_tray || is_minimized || forced_visible) && !dismissed {
         show_widget_window(app, state);
     } else {
         hide_widget_window(app, state);
@@ -1121,8 +1092,8 @@ fn toggle_widget_from_tray(app: &AppHandle, state: &Arc<AppState>) {
     if !*state.widget_enabled.lock().unwrap() {
         *state.widget_enabled.lock().unwrap() = true;
         *state.widget_dismissed.lock().unwrap() = false;
+        *state.widget_force_visible.lock().unwrap() = true;
         persist_config_best_effort(state);
-        show_widget_window(app, state);
         sync_shell_surfaces(app, state);
         return;
     }
@@ -1133,11 +1104,11 @@ fn toggle_widget_from_tray(app: &AppHandle, state: &Arc<AppState>) {
         .unwrap_or(false);
 
     if widget_visible {
+        *state.widget_force_visible.lock().unwrap() = false;
         *state.widget_dismissed.lock().unwrap() = true;
-        hide_widget_window(app, state);
     } else {
+        *state.widget_force_visible.lock().unwrap() = true;
         *state.widget_dismissed.lock().unwrap() = false;
-        show_widget_window(app, state);
     }
     sync_shell_surfaces(app, state);
 }
@@ -1502,6 +1473,7 @@ fn set_widget_enabled(app: AppHandle, state: State<'_, Arc<AppState>>, enabled: 
     *state.widget_enabled.lock().unwrap() = enabled;
     if !enabled {
         *state.widget_dismissed.lock().unwrap() = true;
+        *state.widget_force_visible.lock().unwrap() = false;
     } else {
         *state.widget_dismissed.lock().unwrap() = false;
     }
@@ -1540,6 +1512,7 @@ fn dismiss_widget(app: AppHandle, state: State<'_, Arc<AppState>>) {
     *state.widget_dismissed.lock().unwrap() = true;
     *state.widget_enabled.lock().unwrap() = false;
     *state.collapsed_to_tray.lock().unwrap() = false;
+    *state.widget_force_visible.lock().unwrap() = false;
     persist_config_best_effort(state.inner());
     sync_tray_state(&app, state.inner());
     hide_widget_window(&app, state.inner());
@@ -1883,6 +1856,7 @@ pub fn run() {
         widget_enabled: Mutex::new(config.widget_enabled),
         collapsed_to_tray: Mutex::new(false),
         widget_dismissed: Mutex::new(false),
+        widget_force_visible: Mutex::new(false),
         widget_position: Mutex::new(match (config.widget_x, config.widget_y) {
             (Some(x), Some(y)) => Some((x, y)),
             _ => None,

@@ -2,6 +2,12 @@
 
 All notable changes to OpenTimeSync are documented in this file.
 
+## [2.1.5] - 2026-06-08
+
+### Fixed
+- Fixed the tray widget menu interaction by keeping the tray menu stable instead of rebuilding it during visibility refreshes, so the right-click menu remains hoverable and clickable.
+- Fixed the tray-driven widget toggle path by introducing an explicit manual widget visibility state, so showing the widget from the tray no longer gets immediately cancelled by the normal minimize-only visibility rule.
+
 ## [2.1.4] - 2026-06-08
 
 ### Changed
