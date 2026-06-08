@@ -30,6 +30,7 @@ const MAIN_LABEL: &str = "main";
 const SPLASH_LABEL: &str = "splashscreen";
 const TRAY_ID: &str = "system-tray";
 const TRAY_SHOW_ID: &str = "tray-show";
+const TRAY_WIDGET_ID: &str = "tray-widget";
 const TRAY_EXIT_ID: &str = "tray-exit";
 const MASTER_PORT: u16 = 36363;
 const CALIBRATION_INTERVAL_SECS: u64 = 2;
@@ -779,6 +780,35 @@ fn sync_tray_state(app: &AppHandle, state: &Arc<AppState>) {
     };
 
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let widget_label = if !*state.widget_enabled.lock().unwrap() {
+            "启用悬浮挂件"
+        } else {
+            let widget_visible = app
+                .get_webview_window(WIDGET_LABEL)
+                .and_then(|window| window.is_visible().ok())
+                .unwrap_or(false);
+            if widget_visible {
+                "隐藏悬浮挂件"
+            } else {
+                "显示悬浮挂件"
+            }
+        };
+        if let Ok(show_item) =
+            MenuItem::with_id(app, TRAY_SHOW_ID, "显示主窗口", true, None::<&str>)
+        {
+            if let Ok(widget_item) =
+                MenuItem::with_id(app, TRAY_WIDGET_ID, widget_label, true, None::<&str>)
+            {
+                if let Ok(quit_item) =
+                    MenuItem::with_id(app, TRAY_EXIT_ID, "退出 OpenTimeSync", true, None::<&str>)
+                {
+                    if let Ok(menu) = Menu::with_items(app, &[&show_item, &widget_item, &quit_item])
+                    {
+                        let _ = tray.set_menu(Some(menu));
+                    }
+                }
+            }
+        }
         let _ = tray.set_visible(should_show);
         let _ = tray.set_tooltip(Some(format_tray_tooltip(state)));
     }
@@ -913,7 +943,7 @@ fn ensure_splash_window(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let splash = WebviewWindowBuilder::new(
+    let mut splash_builder = WebviewWindowBuilder::new(
         app,
         SPLASH_LABEL,
         WebviewUrl::App("splash.html".into()),
@@ -922,13 +952,20 @@ fn ensure_splash_window(app: &AppHandle) -> Result<(), String> {
     .inner_size(760.0, 240.0)
     .resizable(false)
     .decorations(false)
-    .background_color(Color(0, 0, 0, 0))
-    .shadow(false)
-    .skip_taskbar(true)
-    .always_on_top(true)
-    .focused(false)
-    .center()
-    .build()
+    .background_color(Color(0, 0, 0, 0));
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        splash_builder = splash_builder.transparent(true);
+    }
+
+    let splash = splash_builder
+        .shadow(false)
+        .skip_taskbar(true)
+        .always_on_top(true)
+        .focused(false)
+        .center()
+        .build()
     .map_err(|e| e.to_string())?;
 
     let _ = splash.set_ignore_cursor_events(true);
@@ -945,9 +982,13 @@ fn ensure_tray_icon(app: &AppHandle, state: &Arc<AppState>) -> Result<(), String
 
     let show_item = MenuItem::with_id(app, TRAY_SHOW_ID, "显示主窗口", true, None::<&str>)
         .map_err(|e| e.to_string())?;
+    let widget_item =
+        MenuItem::with_id(app, TRAY_WIDGET_ID, "启用悬浮挂件", true, None::<&str>)
+            .map_err(|e| e.to_string())?;
     let quit_item = MenuItem::with_id(app, TRAY_EXIT_ID, "退出 OpenTimeSync", true, None::<&str>)
         .map_err(|e| e.to_string())?;
-    let menu = Menu::with_items(app, &[&show_item, &quit_item]).map_err(|e| e.to_string())?;
+    let menu =
+        Menu::with_items(app, &[&show_item, &widget_item, &quit_item]).map_err(|e| e.to_string())?;
 
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -1016,12 +1057,20 @@ fn ensure_widget_window(app: &AppHandle) -> Result<(), String> {
         return Ok(());
     }
 
-    let widget = WebviewWindowBuilder::new(app, WIDGET_LABEL, WebviewUrl::App("index.html".into()))
+    let mut widget_builder =
+        WebviewWindowBuilder::new(app, WIDGET_LABEL, WebviewUrl::App("index.html".into()))
         .title("OpenTimeSync Widget")
         .inner_size(WIDGET_WIDTH, WIDGET_HEIGHT)
         .resizable(false)
         .decorations(false)
-        .background_color(Color(0, 0, 0, 0))
+        .background_color(Color(0, 0, 0, 0));
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        widget_builder = widget_builder.transparent(true);
+    }
+
+    let widget = widget_builder
         .skip_taskbar(true)
         .focused(false)
         .visible(false)
@@ -1074,6 +1123,31 @@ fn schedule_widget_visibility_sync(app: AppHandle, state: Arc<AppState>) {
         std::thread::sleep(Duration::from_millis(180));
         sync_shell_surfaces(&app, &state);
     });
+}
+
+fn toggle_widget_from_tray(app: &AppHandle, state: &Arc<AppState>) {
+    if !*state.widget_enabled.lock().unwrap() {
+        *state.widget_enabled.lock().unwrap() = true;
+        *state.widget_dismissed.lock().unwrap() = false;
+        persist_config_best_effort(state);
+        show_widget_window(app, state);
+        sync_shell_surfaces(app, state);
+        return;
+    }
+
+    let widget_visible = app
+        .get_webview_window(WIDGET_LABEL)
+        .and_then(|window| window.is_visible().ok())
+        .unwrap_or(false);
+
+    if widget_visible {
+        *state.widget_dismissed.lock().unwrap() = true;
+        hide_widget_window(app, state);
+    } else {
+        *state.widget_dismissed.lock().unwrap() = false;
+        show_widget_window(app, state);
+    }
+    sync_shell_surfaces(app, state);
 }
 
 fn attach_main_window_listener(app: &AppHandle, state: Arc<AppState>) {
@@ -1846,6 +1920,9 @@ pub fn run() {
             if event.id() == TRAY_SHOW_ID {
                 let state = app.state::<Arc<AppState>>().inner().clone();
                 let _ = restore_main_window_internal(app, &state);
+            } else if event.id() == TRAY_WIDGET_ID {
+                let state = app.state::<Arc<AppState>>().inner().clone();
+                toggle_widget_from_tray(app, &state);
             } else if event.id() == TRAY_EXIT_ID {
                 exit_application(app);
             }

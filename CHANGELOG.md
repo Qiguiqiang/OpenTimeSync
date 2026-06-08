@@ -2,6 +2,13 @@
 
 All notable changes to OpenTimeSync are documented in this file.
 
+## [2.1.3] - 2026-06-08
+
+### Fixed
+- Fixed the startup splash window so transparent areas remain truly transparent again on Windows instead of falling back to an opaque rectangle after the macOS build compatibility change.
+- Fixed the floating widget window so non-drawn areas return to transparent behavior again instead of showing an opaque host window.
+- Added a tray menu action to show or hide the floating widget directly from the tray icon right-click menu, without forcing users back through settings first.
+
 ## [2.1.2] - 2026-06-07
 
 ### Changed
