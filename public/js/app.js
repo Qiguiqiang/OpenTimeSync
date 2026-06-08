@@ -1080,9 +1080,6 @@ function setupInteractions() {
   document.addEventListener('mouseup', () => {
     if (!State.isWidget) return;
     DOM.widgetShell?.classList.remove('dragging');
-    setTimeout(() => {
-      invokeTauri('save_widget_position').catch(() => {});
-    }, 120);
   });
 }
 

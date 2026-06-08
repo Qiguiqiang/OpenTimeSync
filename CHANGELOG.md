@@ -2,6 +2,11 @@
 
 All notable changes to OpenTimeSync are documented in this file.
 
+## [2.1.9] - 2026-06-08
+
+### Fixed
+- Fixed floating widget drag snap-back by removing main-window focus-driven visibility refreshes that were reapplying stale widget coordinates during drag operations.
+
 ## [2.1.8] - 2026-06-08
 
 ### Fixed

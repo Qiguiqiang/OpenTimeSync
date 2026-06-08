@@ -1089,6 +1089,11 @@ fn schedule_widget_visibility_sync(app: AppHandle, state: Arc<AppState>) {
     });
 }
 
+fn persist_widget_position(state: &Arc<AppState>, x: i32, y: i32) {
+    *state.widget_position.lock().unwrap() = Some((x, y));
+    persist_config_best_effort(state);
+}
+
 fn toggle_widget_from_tray(app: &AppHandle, state: &Arc<AppState>) {
     if !*state.widget_enabled.lock().unwrap() {
         *state.widget_enabled.lock().unwrap() = true;
@@ -1124,19 +1129,20 @@ fn attach_main_window_listener(app: &AppHandle, state: Arc<AppState>) {
                     hide_main_window_to_tray(&app_handle, &state);
                 }
             }
-            WindowEvent::Focused(false) => {
-                schedule_widget_visibility_sync(app_handle.clone(), state.clone());
-            }
-            WindowEvent::Focused(true) => {
-                if let Some(widget) = app_handle.get_webview_window(WIDGET_LABEL) {
-                    let _ = widget.hide();
-                }
-                schedule_widget_visibility_sync(app_handle.clone(), state.clone());
-            }
             WindowEvent::Resized(_) | WindowEvent::Moved(_) => {
                 schedule_widget_visibility_sync(app_handle.clone(), state.clone());
             }
             _ => {}
+        });
+    }
+}
+
+fn attach_widget_window_listener(app: &AppHandle, state: Arc<AppState>) {
+    if let Some(widget_window) = app.get_webview_window(WIDGET_LABEL) {
+        widget_window.on_window_event(move |event| {
+            if let WindowEvent::Moved(position) = event {
+                persist_widget_position(&state, position.x, position.y);
+            }
         });
     }
 }
@@ -1958,6 +1964,7 @@ pub fn run() {
             sync_startup_ui_state(&app.handle(), &app_state);
             schedule_startup_failsafe(app.handle().clone(), app_state.clone());
             attach_main_window_listener(&app.handle(), app_state.clone());
+            attach_widget_window_listener(&app.handle(), app_state.clone());
             start_master_listener(app_state.clone());
             run_ntp_loop(app.handle().clone(), app_state.clone());
             Ok(())
