@@ -2,6 +2,11 @@
 
 All notable changes to OpenTimeSync are documented in this file.
 
+## [2.1.6] - 2026-06-08
+
+### Fixed
+- Fixed floating widget content scaling so the precision badge, time text, and close control now follow the configured widget scale percentage in the actual widget window instead of only resizing the outer host window.
+
 ## [2.1.5] - 2026-06-08
 
 ### Fixed

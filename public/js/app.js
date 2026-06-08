@@ -133,6 +133,7 @@ let bootTimer = 0;
 let widgetDrag = null;
 let widgetClickGuardUntil = 0;
 let widgetScalePersistTimer = 0;
+let widgetSettingsPollTimer = 0;
 
 function cls(value, warn, danger) {
   return value < warn ? 'good' : value < danger ? 'warning' : 'danger';
@@ -404,6 +405,13 @@ function updateWidgetUI() {
   DOM.widgetShell.dataset.tooltip = State.hasNtpData
     ? `${State.sourceLabel}\n偏移 ${State.ntpOffset.toFixed(2)}ms\n延迟 ${State.ntpRtt > 0 ? `${State.ntpRtt}ms` : '--'}\n采样 ${State.samples.length}/20`
     : '未同步\n当前显示本地时间';
+}
+
+function applyWidgetScale(scale) {
+  State.widgetScale = Number(scale) || 100;
+  DOM.widgetScale.value = String(State.widgetScale);
+  if (DOM.widgetScaleValue) DOM.widgetScaleValue.textContent = `${State.widgetScale}%`;
+  updateWidgetUI();
 }
 
 function renderModeUI() {
@@ -760,6 +768,31 @@ function stopNtpPolling() {
   }
 }
 
+async function refreshWidgetSettings() {
+  if (!State.isWidget) return;
+  try {
+    const settings = await invokeTauri('get_sync_settings');
+    if (Number(settings.widgetScale) !== State.widgetScale) {
+      applyWidgetScale(settings.widgetScale);
+    }
+    State.widgetEnabled = !!settings.widgetEnabled;
+  } catch (_) {}
+}
+
+function startWidgetSettingsPolling() {
+  if (!State.isWidget) return;
+  stopWidgetSettingsPolling();
+  refreshWidgetSettings();
+  widgetSettingsPollTimer = setInterval(refreshWidgetSettings, 300);
+}
+
+function stopWidgetSettingsPolling() {
+  if (widgetSettingsPollTimer) {
+    clearInterval(widgetSettingsPollTimer);
+    widgetSettingsPollTimer = 0;
+  }
+}
+
 function renderBrowserMode() {
   setStatus('error', 'BROWSER MODE');
   DOM.titlebar?.remove();
@@ -792,15 +825,13 @@ async function loadSyncSettings() {
   State.masterHost = settings.masterHost || '127.0.0.1:36363';
   State.pairCode = settings.pairCode || '';
   State.widgetEnabled = !!settings.widgetEnabled;
-  State.widgetScale = Number(settings.widgetScale) || 100;
   State.calibrationStage = settings.calibrationStage || 'calibrating';
   State.activeServers = settings.activeServers || [];
   State.ntpServer = settings.ntpServer || State.ntpServer;
 
   DOM.chkAutoSync.checked = State.autoSync;
   DOM.syncInterval.value = String(State.syncIntervalSecs);
-  DOM.widgetScale.value = String(State.widgetScale);
-  if (DOM.widgetScaleValue) DOM.widgetScaleValue.textContent = `${State.widgetScale}%`;
+  applyWidgetScale(settings.widgetScale);
   DOM.masterHost.value = State.masterHost;
   DOM.pairCode.value = State.pairCode;
   DOM.chkWidgetEnabled.checked = State.widgetEnabled;
@@ -978,9 +1009,7 @@ function setupInteractions() {
   DOM.widgetScale?.addEventListener('input', () => {
     const scale = clamp(parseInt(DOM.widgetScale.value, 10) || 100, 80, 220);
     DOM.widgetScale.value = String(scale);
-    State.widgetScale = scale;
-    if (DOM.widgetScaleValue) DOM.widgetScaleValue.textContent = `${scale}%`;
-    updateWidgetUI();
+    applyWidgetScale(scale);
     if (widgetScalePersistTimer) clearTimeout(widgetScalePersistTimer);
     widgetScalePersistTimer = setTimeout(() => {
       invokeTauri('set_widget_scale', { scale }).catch(() => {});
@@ -991,8 +1020,7 @@ function setupInteractions() {
   DOM.widgetScale?.addEventListener('change', () => {
     const scale = clamp(parseInt(DOM.widgetScale.value, 10) || 100, 80, 220);
     DOM.widgetScale.value = String(scale);
-    State.widgetScale = scale;
-    if (DOM.widgetScaleValue) DOM.widgetScaleValue.textContent = `${scale}%`;
+    applyWidgetScale(scale);
     invokeTauri('set_widget_scale', { scale }).catch(() => {});
   });
 
@@ -1086,6 +1114,7 @@ function setNtp(host) {
 
 function cleanup() {
   stopNtpPolling();
+  stopWidgetSettingsPolling();
   stopUpdatePolling();
   if (bootTimer) {
     clearTimeout(bootTimer);
@@ -1118,6 +1147,7 @@ async function initApp() {
     renderBootState();
     const updateStatus = await invokeTauri('get_update_status');
     renderUpdateStatus(updateStatus);
+    startWidgetSettingsPolling();
     startNtpPolling();
     await pollOnce();
     renderBootState();
