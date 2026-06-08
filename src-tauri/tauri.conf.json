@@ -1,6 +1,6 @@
 {
   "productName": "OpenTimeSync",
-  "version": "2.1.13",
+  "version": "2.1.14",
   "identifier": "com.opentimesync.desktop",
   "build": {
     "frontendDist": "../public",

@@ -2,6 +2,11 @@
 
 All notable changes to OpenTimeSync are documented in this file.
 
+## [2.1.14] - 2026-06-08
+
+### Changed
+- Added a softer animated ocean background behind the main clock, with layered swells, slow caustic highlights, and reduced-motion support so the motion feels calmer without reducing time readability.
+
 ## [2.1.13] - 2026-06-08
 
 ### Changed
